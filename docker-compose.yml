@@ -1,0 +1,245 @@
+# Full stack. `docker compose up` is the whole demo: broker, pipeline, model,
+# worker, web, and a one-shot that fills the table so :8000 is not empty while
+# we wait for a live pull request.
+#
+# Everything talks to each other on the compose network using the service name
+# (redpanda:9092). The "external" listener on 19092 exists so tools on the laptop
+# — rpk, a Python REPL — can reach the same broker at localhost:19092.
+
+services:
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:latest
+    container_name: redpanda
+    command:
+      - redpanda
+      - start
+      - --mode=dev-container          # single node, no raft quorum, no tuning
+      - --smp=1
+      - --default-log-level=info
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr=internal://redpanda:9092,external://localhost:19092
+      - --rpc-addr=redpanda:33145
+      - --advertise-rpc-addr=redpanda:33145
+    ports:
+      - "19092:19092"   # kafka, from the laptop
+      - "9644:9644"     # admin api
+    healthcheck:
+      # Nothing downstream starts until the broker actually reports healthy.
+      test: ["CMD-SHELL", "rpk cluster health | grep -qE 'Healthy:.+true'"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+
+  # One-shot. Creates the topics, prints them, exits 0. Connect and the worker
+  # depend on this completing, so nothing ever races a missing topic.
+  topics-init:
+    image: docker.redpanda.com/redpandadata/redpanda:latest
+    container_name: topics-init
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        rpk topic create pr.enriched pr.triaged pr.dlq \
+          --brokers redpanda:9092 --partitions 1 --replicas 1 || true
+        echo "--- topics ---"
+        rpk topic list --brokers redpanda:9092
+    restart: "no"
+
+  console:
+    image: docker.redpanda.com/redpandadata/console:latest
+    container_name: console
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+    ports:
+      - "8080:8080"
+
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    environment:
+      POSTGRES_USER: triage
+      POSTGRES_PASSWORD: triage
+      POSTGRES_DB: triage
+    ports:
+      # 55432, not 5432: the standard port is very often already taken on a
+      # developer laptop. Inside the compose network everything still uses 5432.
+      - "55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U triage -d triage"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Runs once, on an empty data directory. `task down` wipes volumes so this re-runs.
+      # migrate.sql is mounted so `task migrate` can apply it to a RUNNING volume
+      # (schema.sql will not re-run — that is the surprise-diff-hour trap).
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./db/migrate.sql:/docker-entrypoint-initdb.d/02-migrate.sql:ro
+
+  # ── The pipeline ────────────────────────────────────────────────────────────
+
+  connect:
+    image: docker.redpanda.com/redpandadata/connect:latest
+    container_name: connect
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      topics-init:
+        condition: service_completed_successfully
+    environment:
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      REDPANDA_BROKERS: redpanda:9092
+    volumes:
+      - ./connect:/cfg:ro
+    # GitHub 403s on an empty Authorization header (verified: no header → 200,
+    # "Authorization: " → 403). So when there is no token we strip the header
+    # lines from a writable copy of the config rather than sending a blank one.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        if [ -n "$${GITHUB_TOKEN}" ]; then
+          export GITHUB_TOKEN_HEADER="token $${GITHUB_TOKEN}"
+          echo "connect: using GITHUB_TOKEN (5000 req/hr)"
+          exec /redpanda-connect run /cfg/ingest.yaml
+        else
+          echo "connect: NO GITHUB_TOKEN — anonymous, 60 req/hr. Omitting Authorization."
+          grep -v 'Authorization:' /cfg/ingest.yaml > /tmp/ingest.yaml
+          exec /redpanda-connect run /tmp/ingest.yaml
+        fi
+    restart: unless-stopped
+
+  # ── The model ───────────────────────────────────────────────────────────────
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # One-shot: pulls the model, then exits. The worker waits for this to finish,
+  # so it never starts talking to a model that is not there yet. First run
+  # downloads ~2GB.
+  ollama-pull:
+    image: ollama/ollama:latest
+    container_name: ollama-pull
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c"]
+    # Always exits 0, even on failure. The model CDN can be slow or blocked from
+    # inside Docker (it timed out on the machine this was built on). If that
+    # happens, the stack must still come up: the worker starts, every row lands
+    # as `fallback`, and `task seed:offline` gives you real recorded results to
+    # look at. A blocked download must not mean a dead demo.
+    command:
+      - |
+        MODEL="${OLLAMA_MODEL:-qwen2.5:3b}"
+        echo "pulling $$MODEL (first run downloads ~2GB)..."
+        for attempt in 1 2 3; do
+          if ollama pull "$$MODEL"; then
+            echo "model ready: $$MODEL"
+            exit 0
+          fi
+          echo "pull attempt $$attempt failed; retrying..."
+        done
+        echo ""
+        echo "############################################################"
+        echo "# COULD NOT DOWNLOAD $$MODEL"
+        echo "# The stack will still start. To see results, either:"
+        echo "#   task seed:offline    recorded results, no model needed"
+        echo "#   or set LLM_PROVIDER=anthropic in .env"
+        echo "#   or point at a host Ollama:"
+        echo "#     OLLAMA_HOST=http://host.docker.internal:11434"
+        echo "############################################################"
+        exit 0
+    restart: "no"
+
+  # ── Our code ────────────────────────────────────────────────────────────────
+
+  # One-shot. Loads recorded results so :8000 has rows the moment the page
+  # opens — live PRs are ~2 in 100 GitHub events, and the model download can
+  # fail. ON CONFLICT DO NOTHING, so a later live classification wins.
+  # Does not wait for Ollama: that is the point.
+  seed:
+    build: .
+    container_name: seed
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_DSN: postgresql://triage:triage@postgres:5432/triage
+      PYTHONUNBUFFERED: "1"
+    command: ["python", "scripts/seed_offline.py"]
+    restart: "no"
+
+  worker:
+    build: .
+    container_name: worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      topics-init:
+        condition: service_completed_successfully
+      ollama-pull:
+        condition: service_completed_successfully
+    environment:
+      REDPANDA_BROKERS: redpanda:9092
+      POSTGRES_DSN: postgresql://triage:triage@postgres:5432/triage
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-5}
+      CONFIDENCE_THRESHOLD: ${CONFIDENCE_THRESHOLD:-0.65}
+      PYTHONUNBUFFERED: "1"
+    command: ["python", "worker.py"]
+    restart: unless-stopped
+
+  web:
+    build: .
+    container_name: web
+    depends_on:
+      postgres:
+        condition: service_healthy
+      seed:
+        condition: service_completed_successfully
+    environment:
+      POSTGRES_DSN: postgresql://triage:triage@postgres:5432/triage
+      PYTHONUNBUFFERED: "1"
+    ports:
+      - "8000:8000"
+    command: ["uvicorn", "web:app", "--host", "0.0.0.0", "--port", "8000"]
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')\"",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  redpanda-data:
+  postgres-data:
+  ollama-models:

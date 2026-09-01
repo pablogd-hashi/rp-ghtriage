@@ -1,0 +1,14 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.DS_Store
+connect/bootcamp/scratch/
+
+# Private working notes — local only, never pushed.
+# These reference the hiring process; the repo is public.
+PLAN.md
+docs/eli5.md
+docs/seam-map.md
+docs/demo-runbook.md

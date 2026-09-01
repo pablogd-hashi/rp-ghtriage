@@ -1,0 +1,85 @@
+version: '3'
+
+dotenv: ['.env']
+
+vars:
+  CONNECT_IMAGE: docker.redpanda.com/redpandadata/connect:latest
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds: [task --list]
+    silent: true
+
+  up:
+    desc: Bring the stack up and wait until it is actually ready
+    cmds:
+      - docker compose up -d --wait
+      - task: topics
+
+  down:
+    desc: Stop everything and wipe the volumes (so the schema re-runs next time)
+    cmds:
+      - docker compose down -v
+
+  logs:
+    desc: Tail everything
+    cmds: [docker compose logs -f]
+
+  topics:
+    desc: Show the topics and their message counts
+    cmds:
+      - docker compose exec -T redpanda rpk topic list --brokers redpanda:9092
+
+  psql:
+    desc: Open a database shell
+    cmds: [docker compose exec postgres psql -U triage -d triage]
+    interactive: true
+
+  bootcamp:
+    desc: 'Run a bootcamp pipeline, e.g. task bootcamp -- 01-hello'
+    cmds:
+      - |
+        docker run --rm -it \
+          -v "{{.PWD}}/connect/bootcamp:/cfg:ro" \
+          {{.CONNECT_IMAGE}} run /cfg/{{.CLI_ARGS}}.yaml
+
+  test:
+    desc: Run the tests (in the container, so no local python setup needed)
+    cmds:
+      - docker compose run --rm --no-deps -e LLM_PROVIDER=fake worker python -m pytest tests/ -q
+
+  seed:
+    desc: Fill the UI from saved fixtures, using the real reasoning loop
+    cmds:
+      - docker compose run --rm --no-deps -e POSTGRES_DSN=postgresql://triage:triage@postgres:5432/triage worker python scripts/seed.py
+
+  seed:offline:
+    desc: Load recorded results — no model needed, works with no network
+    cmds:
+      - docker compose run --rm --no-deps worker python scripts/seed_offline.py
+
+  migrate:
+    desc: Apply db/migrate.sql to the running database (schema.sql will not re-run)
+    cmds:
+      - docker compose exec -T postgres psql -U triage -d triage -f /docker-entrypoint-initdb.d/02-migrate.sql
+
+  eval:
+    desc: Ablation — does reading the diff actually beat reading the title?
+    cmds:
+      - docker compose run --rm --no-deps worker python evals/run.py
+
+  demo:fallback:
+    desc: Point the worker at a nonexistent model, so every row lands as fallback
+    cmds:
+      - docker compose run --rm --no-deps -e OLLAMA_MODEL=does-not-exist worker python scripts/seed.py
+
+  rate:
+    desc: How much GitHub quota is left
+    cmds:
+      - 'curl -s -H "User-Agent: x" https://api.github.com/rate_limit | python3 -c "import json,sys,time; c=json.load(sys.stdin)[\"resources\"][\"core\"]; print(f\"{c[\"remaining\"]}/{c[\"limit\"]} left, resets in {int((c[\"reset\"]-time.time())/60)}m\")"'
+
+  consume:
+    desc: 'Peek at a topic, e.g. task consume -- pr.enriched'
+    cmds:
+      - docker compose exec -T redpanda rpk topic consume {{.CLI_ARGS}} -n 1 --brokers redpanda:9092

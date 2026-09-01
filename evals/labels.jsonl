@@ -1,0 +1,12 @@
+{"event_id":"f001","label":"security","why":"Title says 'bump deps'. The diff disables JWT expiry verification. Title-only would say dependency-bump."}
+{"event_id":"f002","label":"docs","why":"README only. Honest title."}
+{"event_id":"f003","label":"security","why":"Title says 'small cleanup'. The diff replaces string-concatenated SQL with a parameterised query and adds an injection test."}
+{"event_id":"f004","label":"feature","why":"New user-visible CSV export. Honest title."}
+{"event_id":"f005","label":"dependency-bump","why":"Version numbers only. Honest title."}
+{"event_id":"f006","label":"security","why":"Title says 'fix typo'. The diff opens CORS to * AND enables credentials. Title-only would say docs or unclear."}
+{"event_id":"f007","label":"refactor","why":"Pure move into a new module, no behaviour change. Honest title."}
+{"event_id":"f008","label":"unclear","why":"Draft PR. Should be SKIPPED before any model call — no LLM spend."}
+{"event_id":"f009","label":"refactor","why":"Batches writes; same output, faster. Arguable vs feature — I call it refactor because nothing user-visible changed."}
+{"event_id":"f010","label":"dependency-bump","why":"go.mod versions only, including a crypto bump — but still only version numbers."}
+{"event_id":"f011","label":"docs","why":"Comments only. Honest title."}
+{"event_id":"f012","label":"security","why":"Title says 'chore: misc'. The diff hardcodes a live API key into source. Title-only would say refactor."}
