@@ -1,0 +1,36 @@
+# 01 — the shape of every Connect config, and the one gotcha that bites everyone.
+#
+#   task bootcamp -- 01-hello
+#
+# Every config is three blocks: input, pipeline, output. That is it.
+
+input:
+  # Invents messages so we do not need the network yet.
+  generate:
+    count: 3
+    interval: 1s
+    mapping: |
+      root.name = "widget"
+      root.price = 10
+      root.colour = "red"
+
+pipeline:
+  processors:
+    # ── THE GOTCHA ───────────────────────────────────────────────────────────
+    # A `mapping` builds `root` FROM SCRATCH. It does not edit the message in
+    # place. Whatever you do not assign is GONE.
+    #
+    # This one keeps everything, then changes one field:
+    - mapping: |
+        root = this          # start from the incoming message...
+        root.price = this.price * 2
+
+    # ── NOW BREAK IT ─────────────────────────────────────────────────────────
+    # Delete the `root = this` line above and run again.
+    # You get {"price":20} — name and colour vanished silently. No error.
+    #
+    # This is the single most common Connect mistake and it fails QUIETLY.
+    # On Evening 3 the final projection is one big mapping for exactly this reason.
+
+output:
+  stdout: {}

@@ -1,0 +1,47 @@
+# 04 — remembering what we have seen, and dealing with junk.
+#
+#   task bootcamp -- 04-dedupe-and-fail
+#
+# Two lessons: dedupe (needed because GitHub polls overlap), and what happens
+# when a message is not what you assumed.
+
+input:
+  generate:
+    count: 6
+    interval: 500ms
+    mapping: |
+      # Only three distinct ids across six messages — so three should survive.
+      root.id = ["a", "b", "c", "a", "b", "c"].index(count("demo") % 6)
+      root.payload = "some content"
+
+pipeline:
+  processors:
+    # Drops any message whose key has been seen before, within the TTL.
+    # This is what stops us re-processing the same PR on every 60s poll.
+    - dedupe:
+        cache: seen
+        key: '${! json("id") }'
+
+    # ── HANDLING JUNK ────────────────────────────────────────────────────────
+    # `.catch()` is how you stop one bad message killing the pipeline.
+    # Without it, a parse failure propagates and everything downstream breaks.
+    #
+    #   .catch(deleted())        → throw the bad message away
+    #   .catch("default value")  → substitute something safe
+    #
+    # The Redpanda hint warns about this specifically: Bloblang does NOT fail
+    # closed inside an `if`, so an unparseable message sails through as raw text
+    # and breaks something much further downstream, where it is hard to diagnose.
+    - mapping: |
+        root = this
+        root.seen_at = now()
+
+cache_resources:
+  - label: seen
+    memory:
+      default_ttl: 60s      # NOTE: in-process. Dies with the container.
+                            # That is why Postgres gets an UPSERT as well —
+                            # two independent defences against reprocessing.
+
+output:
+  stdout: {}

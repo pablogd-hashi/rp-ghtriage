@@ -1,0 +1,198 @@
+# GitHub public events -> filter -> dedupe -> enrich -> pr.enriched
+#
+# Connect owns everything up to the topic: polling, throwing away the 98% we do
+# not care about, remembering what we have seen, and fetching the content the
+# feed refuses to give us. The worker downstream is allowed to assume the record
+# it receives has real content in it. See docs/contracts.md.
+
+http:
+  enabled: false          # we do not need Connect's own HTTP server
+
+input:
+  http_client:
+    url: https://api.github.com/events?per_page=100
+    verb: GET
+    headers:
+      # GitHub rejects requests with no User-Agent. Not optional.
+      User-Agent: pr-triage-pipeline
+      Accept: application/vnd.github+json
+      # Omitted entirely when GITHUB_TOKEN is unset (see compose entrypoint).
+      # An empty Authorization header is a 403; no header is a 200.
+      Authorization: '${GITHUB_TOKEN_HEADER:}'
+    # GitHub's X-Poll-Interval for /events is 60 seconds. Polling faster
+    # returns the same page and burns quota. This limiter is ONLY the poll;
+    # enrichment has its own budget below. Mixing them meant a burst of
+    # surviving PRs could delay the next poll, and the next poll could starve
+    # enrichment — and the README claimed 60s while the config did not.
+    rate_limit: github_poll
+    timeout: 20s
+    retries: 3
+    retry_period: 5s
+
+pipeline:
+  processors:
+    # The response is one JSON array of ~100 events. Split it into ~100 messages.
+    - unarchive:
+        format: json_array
+
+    # ── FILTER FIRST ─────────────────────────────────────────────────────────
+    # Everything below this line costs an API call or a model call. Everything
+    # above it is free. So this is where ~98% of the firehose dies.
+    #
+    # `deleted()` drops the message. `.or()` guards against fields that are not
+    # there — a malformed event must not take down the pipeline.
+    - mapping: |
+        root = if this.type.or("") == "PullRequestEvent" &&
+                  this.payload.action.or("") == "opened" { this } else { deleted() }
+
+    # Bots open enormous numbers of PRs and we would learn nothing from reading
+    # them. Dropping them here, rather than in the worker, means we never spend
+    # a GitHub fetch on one either.
+    - mapping: |
+        let login = this.actor.login.or("").lowercase()
+        root = if $login.has_suffix("[bot]") ||
+                  $login.contains("dependabot") ||
+                  $login.contains("renovate") ||
+                  $login == "github-actions" { deleted() } else { this }
+
+    # ── DEDUPE ───────────────────────────────────────────────────────────────
+    # Consecutive polls overlap heavily — the same event comes back again and
+    # again. Without this we would re-fetch and re-reason every 60 seconds.
+    #
+    # NOTE: this cache is in-memory and dies with the container. That is why the
+    # Postgres write is also an UPSERT — two independent defences, because either
+    # one alone has a hole in it.
+    - dedupe:
+        cache: seen_events
+        key: '${! json("id") }'
+
+    # ── ENRICHMENT 1: the pull request itself ────────────────────────────────
+    # The feed gives us payload.pull_request = {id, number, url, base, head} and
+    # nothing else. No title, no body. This call is where those come from.
+    - branch:
+        request_map: |
+          root.url = this.payload.pull_request.url
+        processors:
+          - http:
+              url: '${! json("url") }'
+              verb: GET
+              headers:
+                User-Agent: pr-triage-pipeline
+                Accept: application/vnd.github+json
+                Authorization: '${GITHUB_TOKEN_HEADER:}'
+              rate_limit: github_api
+              retries: 3
+              retry_period: 2s
+              timeout: 15s
+        # Inside result_map the usual Bloblang rule inverts: partial assignment
+        # ADDS to the original message instead of replacing it.
+        result_map: |
+          root.pr = this
+
+    # ── ENRICHMENT 2: what actually changed ──────────────────────────────────
+    # The whole point of the pipeline. Without the patches the model
+    # is reading a title, and a title is something a regex could read.
+    - branch:
+        request_map: |
+          root.url = this.payload.pull_request.url + "/files?per_page=30"
+        processors:
+          - http:
+              url: '${! json("url") }'
+              verb: GET
+              headers:
+                User-Agent: pr-triage-pipeline
+                Accept: application/vnd.github+json
+                Authorization: '${GITHUB_TOKEN_HEADER:}'
+              rate_limit: github_api
+              retries: 3
+              retry_period: 2s
+              timeout: 15s
+        result_map: |
+          root.changed_files = this
+
+    # ── PROJECT AND BOUND ────────────────────────────────────────────────────
+    # One mapping, building the whole record. Deliberately ONE block: a second
+    # trailing mapping that set a single field would silently drop everything
+    # else, because a mapping rebuilds root from scratch.
+    #
+    # Truncation happens HERE, not in the prompt. Cost is bounded at the
+    # boundary, so no single enormous PR can blow up a model call downstream.
+    - mapping: |
+        let pr = this.pr.or({})
+        let files = this.changed_files.or([]).slice(0, 8)
+
+        root.event_id         = this.id
+        root.pr_url           = $pr.url.or(this.payload.pull_request.url)
+        root.html_url         = $pr.html_url.or("")
+        root.repo             = this.repo.name.or("")
+        root.pr_number        = $pr.number.or(this.payload.number).or(0)
+        root.author           = $pr.user.login.or(this.actor.login).or("")
+        root.draft            = $pr.draft.or(false)
+        # GitHub events are already ISO-8601 strings, so no epoch conversion is
+        # needed here (that trap belongs to USGS). Postgres TIMESTAMPTZ takes this.
+        root.event_created_at = this.created_at.or("")
+
+        root.title            = $pr.title.or("")
+        root.body             = $pr.body.or("").string().slice(0, 2000)
+        root.additions        = $pr.additions.or(0)
+        root.deletions        = $pr.deletions.or(0)
+        root.files_changed    = $pr.changed_files.or($files.length())
+
+        root.files = $files.map_each(f -> {
+          "filename":  f.filename.or(""),
+          "status":    f.status.or(""),
+          "additions": f.additions.or(0),
+          "deletions": f.deletions.or(0),
+          "patch":     f.patch.or("").string().slice(0, 1500)
+        })
+
+output:
+  switch:
+    cases:
+      # ── THE DEAD LETTER CASE ─────────────────────────────────────────────
+      # If both fetches failed we have a URL and nothing else. Sending that to
+      # the worker would get us a confident-sounding guess based on the repo
+      # name. Better to park it and be able to count how often it happens.
+      #
+      # A failed enrichment is SILENT — the message still flows, just missing
+      # fields. This check is the only thing that notices.
+      - check: this.files.length() == 0 && this.title == ""
+        output:
+          kafka_franz:
+            seed_brokers: ["${REDPANDA_BROKERS:redpanda:9092}"]
+            topic: pr.dlq
+            key: '${! json("pr_url") }'
+
+      - output:
+          kafka_franz:
+            seed_brokers: ["${REDPANDA_BROKERS:redpanda:9092}"]
+            topic: pr.enriched
+            # Keyed on the PR so every version of it lands on the same partition
+            # and stays in order relative to itself.
+            key: '${! json("pr_url") }'
+
+cache_resources:
+  - label: seen_events
+    memory:
+      default_ttl: 2h
+
+rate_limit_resources:
+  # Honour GitHub's documented poll interval. 1/minute = 60/hr for the list
+  # call alone — the anonymous ceiling. Surviving PRs still cost two more
+  # calls each, so a token is required to leave this running. Without one
+  # the pipeline 403s after a few enrichments; it does not crash.
+  - label: github_poll
+    local:
+      count: 1
+      interval: 60s
+
+  # Shared by both enrichment fetches. 900/hr sits under the 5000/hr a token
+  # buys and above a busy minute of surviving PRs (~2 opened PRs per poll).
+  - label: github_api
+    local:
+      count: 900
+      interval: 1h
+
+logger:
+  level: INFO
+  format: logfmt

@@ -1,0 +1,81 @@
+# 03 — `branch`. THE MOST IMPORTANT ONE. Evening 3 is built on this.
+#
+#   task bootcamp -- 03-branch
+#
+# The problem branch solves:
+#   You have a message. You want to fetch something related and ADD it. If you
+#   used a plain `http` processor, the API's response would REPLACE your message
+#   and you would lose everything you already had.
+#
+# branch has three parts, and the middle one is where people trip:
+#
+#   request_map  — build a SMALL NEW MESSAGE to hand to the processors below.
+#                  The real message is set aside safely.
+#                  >>> The processors can ONLY see what this map puts here. <<<
+#   processors   — do the fetch
+#   result_map   — graft the answer back onto the real message
+
+input:
+  # A single made-up message, so this file does not hammer the GitHub API.
+  # (The real pipeline on Evening 2 polls properly, once a minute.)
+  generate:
+    count: 1
+    mapping: |
+      root.repo = "redpanda-data/connect"
+      root.languages_url = "https://api.github.com/repos/redpanda-data/connect/languages"
+
+pipeline:
+  processors:
+    - branch:
+        # Carry forward the ONE field the fetch needs. This is not ceremony —
+        # see BREAK IT #1 for what happens if you skip it.
+        request_map: |
+          root.languages_url = this.languages_url
+
+        processors:
+          - http:
+              # Interpolation reads from the branch's message, i.e. from whatever
+              # request_map just built. NOT from the original message.
+              url: '${! json("languages_url") }'
+              verb: GET
+              headers:
+                User-Agent: pr-triage-pipeline
+              retries: 3
+              retry_period: 2s
+              timeout: 10s
+
+        # ── THE RULE INVERTS HERE ────────────────────────────────────────────
+        # Everywhere else a mapping rebuilds root from scratch (see 01).
+        # INSIDE result_map, partial assignment is CORRECT — branch grafts these
+        # onto the real message that was set aside. So this ADDS a field.
+        result_map: |
+          root.languages = this.keys()
+
+# ── BREAK IT #1 — the one I actually hit while writing this file ──────────────
+#   Change request_map to:      root = ""
+#   Run it. You get:
+#
+#     level=error msg="HTTP request to '${! json(\"languages_url\") }' failed:
+#     url interpolation error: target message part does not exist"
+#
+#   Why: request_map blanked the branch's message, so there was no
+#   `languages_url` for the interpolation to read. The fetch never happened.
+#
+#   NOW THE IMPORTANT BIT: look at the output. The message still came out the
+#   other side, intact, just without `languages`. The pipeline did NOT stop.
+#   A failed enrichment is SILENT unless you go looking for it.
+#
+#   That is why the real pipeline on Evening 3 checks whether enrichment
+#   actually produced content, and routes empty ones to pr.dlq. Otherwise the
+#   model gets asked to judge a PR it cannot see.
+#
+# ── BREAK IT #2 ──────────────────────────────────────────────────────────────
+#   Change result_map to:       root = this
+#   Your `repo` disappears — you replaced the message instead of adding to it.
+#
+# ── BREAK IT #3 ──────────────────────────────────────────────────────────────
+#   Point the url at something that 404s. Watch the 3 retries in the log, then
+#   check what the message looks like afterwards. Same lesson as #1.
+
+output:
+  stdout: {}
