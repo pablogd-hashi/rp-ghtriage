@@ -169,3 +169,20 @@ def test_unparseable_details_are_counted_but_do_not_downgrade():
     assert result.label_source is LabelSource.model
     assert result.affected_area is None
     assert result.llm_calls == 2
+
+
+# ── The model being absent must not destroy work ─────────────────────────────────
+
+def test_dead_model_is_reported_as_unavailable():
+    """The worker checks this before it consumes anything.
+
+    If a missing model reported itself as available, the worker would consume,
+    write fallback rows, and commit the offsets. Committing is the damaging part:
+    GitHub does not re-emit a PullRequestEvent, so the pull request would never be
+    classified again. Waiting instead leaves the message on the topic.
+    """
+    assert DeadLLM().available() is False
+
+
+def test_working_model_is_reported_as_available():
+    assert FakeLLM([]).available() is True

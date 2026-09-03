@@ -11,6 +11,7 @@ import json
 import os
 import signal
 import sys
+import time
 
 from confluent_kafka import Consumer, KafkaError, Producer
 
@@ -52,6 +53,28 @@ def main() -> int:
         "enable.auto.commit": False,
     })
     consumer.subscribe([IN_TOPIC])
+    # Do not consume until the model answers.
+    #
+    # The alternative is what this used to do: consume anyway, write fallback rows,
+    # and commit the offsets. That is worse than stopping, because committing means
+    # the pull request is finished as far as the pipeline is concerned and GitHub
+    # will not emit the event again. A model outage would silently destroy data.
+    #
+    # Waiting instead leaves the messages on pr.enriched. Lag grows, which is
+    # visible in `rpk group describe`, and the backlog drains when the model comes
+    # back. An outage becomes a delay rather than a loss, which is the reason for
+    # having a log in the middle at all.
+    waited = 0
+    while _running and not client.available():
+        if waited % 60 == 0:
+            print(f"waiting for {client.name}: not reachable yet. "
+                  f"Not consuming, so nothing is lost. ({waited}s)",
+                  file=sys.stderr, flush=True)
+        time.sleep(5)
+        waited += 5
+    if not _running:
+        return 0
+
     print(f"worker up: {IN_TOPIC} -> postgres + {OUT_TOPIC} (model={client.name}, "
           f"threshold={THRESHOLD})", flush=True)
 
