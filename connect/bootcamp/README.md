@@ -23,7 +23,7 @@ Run one with:
 task bootcamp -- 01-hello
 ```
 
-Work through them in order. **Break each one on purpose** before moving on — the whole
+Work through them in order. **Break each one on purpose** before moving on. The whole
 value is in seeing what Connect does when things go wrong, because that is what Evening 3
 will actually be like.
 
@@ -36,7 +36,7 @@ Log every surprise in `NOTES.md`. That file is the write-up.
 | `input` | Where messages come from |
 | `pipeline.processors` | An ordered list of steps. Top to bottom. |
 | `output` | Where they go |
-| `mapping` | Bloblang — the little language for reshaping a message |
+| `mapping` | Bloblang. The little language for reshaping a message |
 | `branch` | Go fetch something, graft it on **without** clobbering the message |
 | `cache_resources` | Remember what we have seen (used by `dedupe`) |
 | `rate_limit_resources` | Do not exceed N calls per interval |

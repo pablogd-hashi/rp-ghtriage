@@ -4,7 +4,7 @@
 #
 # Everything talks to each other on the compose network using the service name
 # (redpanda:9092). The "external" listener on 19092 exists so tools on the laptop
-# — rpk, a Python REPL — can reach the same broker at localhost:19092.
+#, rpk, a Python REPL, can reach the same broker at localhost:19092.
 
 services:
   redpanda:
@@ -82,7 +82,7 @@ services:
       - postgres-data:/var/lib/postgresql/data
       # Runs once, on an empty data directory. `task down` wipes volumes so this re-runs.
       # migrate.sql is mounted so `task migrate` can apply it to a RUNNING volume
-      # (schema.sql will not re-run — that is the surprise-diff-hour trap).
+      # (schema.sql will not re-run on an existing volume).
       - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
       - ./db/migrate.sql:/docker-entrypoint-initdb.d/02-migrate.sql:ro
 
@@ -112,7 +112,7 @@ services:
           echo "connect: using GITHUB_TOKEN (5000 req/hr)"
           exec /redpanda-connect run /cfg/ingest.yaml
         else
-          echo "connect: NO GITHUB_TOKEN — anonymous, 60 req/hr. Omitting Authorization."
+          echo "connect: NO GITHUB_TOKEN, anonymous, 60 req/hr. Omitting Authorization."
           grep -v 'Authorization:' /cfg/ingest.yaml > /tmp/ingest.yaml
           exec /redpanda-connect run /tmp/ingest.yaml
         fi
@@ -176,7 +176,7 @@ services:
   # ── Our code ────────────────────────────────────────────────────────────────
 
   # One-shot. Loads recorded results so :8000 has rows the moment the page
-  # opens — live PRs are ~2 in 100 GitHub events, and the model download can
+  # opens, live PRs are ~2 in 100 GitHub events, and the model download can
   # fail. ON CONFLICT DO NOTHING, so a later live classification wins.
   # Does not wait for Ollama: that is the point.
   seed:

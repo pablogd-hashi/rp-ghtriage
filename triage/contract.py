@@ -61,7 +61,7 @@ class Details(BaseModel):
 
 
 class TriageResult(BaseModel):
-    """The finished judgement for one pull request — what gets stored and shown."""
+    """The finished judgement for one pull request, what gets stored and shown."""
 
     category: Category
     confidence: float = Field(ge=0.0, le=1.0)
@@ -76,7 +76,7 @@ class TriageResult(BaseModel):
     latency_ms: int = 0
 
 
-# The categories a model is allowed to choose. `unclear` is deliberately NOT here:
+# The categories a model is allowed to choose. `unclear` is NOT here:
 # only our own fallback may write it, so "unclear" always means "we gave up", never
 # "the model shrugged". That distinction is visible in label_source.
 MODEL_CATEGORIES = frozenset(c.value for c in Category if c is not Category.unclear)

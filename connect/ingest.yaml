@@ -1,6 +1,6 @@
 # GitHub public events -> filter -> dedupe -> enrich -> pr.enriched
 #
-# Connect owns everything up to the topic: polling, throwing away the 98% we do
+# Connect owns everything up to the topic: polling, throwing away the ~92% we do
 # not care about, remembering what we have seen, and fetching the content the
 # feed refuses to give us. The worker downstream is allowed to assume the record
 # it receives has real content in it. See docs/contracts.md.
@@ -23,7 +23,7 @@ input:
     # returns the same page and burns quota. This limiter is ONLY the poll;
     # enrichment has its own budget below. Mixing them meant a burst of
     # surviving PRs could delay the next poll, and the next poll could starve
-    # enrichment — and the README claimed 60s while the config did not.
+    # enrichment, and the README claimed 60s while the config did not.
     rate_limit: github_poll
     timeout: 20s
     retries: 3
@@ -37,10 +37,16 @@ pipeline:
 
     # ── FILTER FIRST ─────────────────────────────────────────────────────────
     # Everything below this line costs an API call or a model call. Everything
-    # above it is free. So this is where ~98% of the firehose dies.
+    # above it is free. So this is where most of the firehose dies.
+    #
+    # Measured over 220 distinct events: 94 pushes, 44 pull-request events (of
+    # which only 20 were `opened`; the rest were merged or labelled), plus
+    # reviews, comments, issues and stars. Minus 2 bot authors, 18 survive.
+    # That is 8% kept, 92% dropped, before a single fetch or model call.
+    # The yield is lumpy: some polls of 100 events survive nothing at all.
     #
     # `deleted()` drops the message. `.or()` guards against fields that are not
-    # there — a malformed event must not take down the pipeline.
+    # there, a malformed event must not take down the pipeline.
     - mapping: |
         root = if this.type.or("") == "PullRequestEvent" &&
                   this.payload.action.or("") == "opened" { this } else { deleted() }
@@ -56,11 +62,11 @@ pipeline:
                   $login == "github-actions" { deleted() } else { this }
 
     # ── DEDUPE ───────────────────────────────────────────────────────────────
-    # Consecutive polls overlap heavily — the same event comes back again and
+    # Consecutive polls overlap heavily. The same event comes back again and
     # again. Without this we would re-fetch and re-reason every 60 seconds.
     #
     # NOTE: this cache is in-memory and dies with the container. That is why the
-    # Postgres write is also an UPSERT — two independent defences, because either
+    # Postgres write is also an UPSERT, two independent defences, because either
     # one alone has a hole in it.
     - dedupe:
         cache: seen_events
@@ -154,7 +160,7 @@ output:
       # the worker would get us a confident-sounding guess based on the repo
       # name. Better to park it and be able to count how often it happens.
       #
-      # A failed enrichment is SILENT — the message still flows, just missing
+      # A failed enrichment is SILENT. The message still flows, just missing
       # fields. This check is the only thing that notices.
       - check: this.files.length() == 0 && this.title == ""
         output:
@@ -178,7 +184,7 @@ cache_resources:
 
 rate_limit_resources:
   # Honour GitHub's documented poll interval. 1/minute = 60/hr for the list
-  # call alone — the anonymous ceiling. Surviving PRs still cost two more
+  # call alone is the anonymous ceiling. Surviving PRs still cost two more
   # calls each, so a token is required to leave this running. Without one
   # the pipeline 403s after a few enrichments; it does not crash.
   - label: github_poll

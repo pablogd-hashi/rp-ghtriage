@@ -1,19 +1,19 @@
-# 03 — `branch`. THE MOST IMPORTANT ONE. Evening 3 is built on this.
+# 03: `branch`. THE MOST IMPORTANT ONE. Evening 3 is built on this.
 #
 #   task bootcamp -- 03-branch
 #
 # The problem branch solves:
 #   You have a message. You want to fetch something related and ADD it. If you
-#   used a plain `http` processor, the API's response would REPLACE your message
+#   used a plain `http` processor, the API response would REPLACE your message
 #   and you would lose everything you already had.
 #
 # branch has three parts, and the middle one is where people trip:
 #
-#   request_map  — build a SMALL NEW MESSAGE to hand to the processors below.
+#   request_map , build a SMALL NEW MESSAGE to hand to the processors below.
 #                  The real message is set aside safely.
 #                  >>> The processors can ONLY see what this map puts here. <<<
-#   processors   — do the fetch
-#   result_map   — graft the answer back onto the real message
+#   processors  , do the fetch
+#   result_map  , graft the answer back onto the real message
 
 input:
   # A single made-up message, so this file does not hammer the GitHub API.
@@ -27,7 +27,7 @@ input:
 pipeline:
   processors:
     - branch:
-        # Carry forward the ONE field the fetch needs. This is not ceremony —
+        # Carry forward the ONE field the fetch needs. This is not ceremony,
         # see BREAK IT #1 for what happens if you skip it.
         request_map: |
           root.languages_url = this.languages_url
@@ -46,12 +46,12 @@ pipeline:
 
         # ── THE RULE INVERTS HERE ────────────────────────────────────────────
         # Everywhere else a mapping rebuilds root from scratch (see 01).
-        # INSIDE result_map, partial assignment is CORRECT — branch grafts these
+        # INSIDE result_map, partial assignment is CORRECT, branch grafts these
         # onto the real message that was set aside. So this ADDS a field.
         result_map: |
           root.languages = this.keys()
 
-# ── BREAK IT #1 — the one I actually hit while writing this file ──────────────
+# ── BREAK IT #1: the one I actually hit while writing this file ──────────────
 #   Change request_map to:      root = ""
 #   Run it. You get:
 #
@@ -71,7 +71,7 @@ pipeline:
 #
 # ── BREAK IT #2 ──────────────────────────────────────────────────────────────
 #   Change result_map to:       root = this
-#   Your `repo` disappears — you replaced the message instead of adding to it.
+#   Your `repo` disappears, you replaced the message instead of adding to it.
 #
 # ── BREAK IT #3 ──────────────────────────────────────────────────────────────
 #   Point the url at something that 404s. Watch the 3 retries in the log, then

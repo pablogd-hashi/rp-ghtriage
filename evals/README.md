@@ -1,17 +1,23 @@
 # Ablation eval
 
-## ⚠️ These labels are a STARTING POINT, not mine yet
+## The labels
 
-`labels.jsonl` was drafted by the agent alongside the fixtures. **Read every line and
-change anything you disagree with** — especially `f009`, which is genuinely arguable
-between `refactor` and `feature`.
+`labels.jsonl` is the only place in this repo that says what a *correct* answer is. The
+eval scores the model against it, so the judgement in it has to be mine.
 
-This matters because the eval is the only place that defines what a correct answer *is*.
-If the judgement in it is not mine, the number it produces measures nothing I can stand
-behind. Ten minutes of reading buys the whole claim.
+Nine of the twelve are uncontroversial. Three were arguable and I settled them:
 
-Ideally, replace these fixtures with **real** PRs captured from the live pipeline
-(`rpk topic consume pr.enriched`) once a `GITHUB_TOKEN` is in `.env`.
+| id | call | the reading I rejected |
+|---|---|---|
+| f003 | `security` | that it is a cleanup which happens to close a SQL injection |
+| f009 | `refactor` | that a 40% speedup is user-visible enough to count as a feature |
+| f010 | `dependency-bump` | that an `x/crypto` bump spanning CVEs is really security |
+
+The `why` field on each line carries the reasoning.
+
+Next improvement: replace these hand-written fixtures with real PRs captured off the live
+pipeline (`task consume -- pr.enriched`), so the eval runs on traffic rather than examples
+built to make a point.
 
 ## What it measures
 
@@ -25,12 +31,12 @@ So we test exactly that, by running the same reasoning loop twice:
 | Run | The model sees | Standing in for |
 |---|---|---|
 | `full` | title, body, filenames **and patch content** | what our pipeline fetches |
-| `ablated` | title, body, filenames — **no patches** | what a metadata-only feed gives you |
+| `ablated` | title, body, filenames, **no patches** | what a metadata-only feed gives you |
 
 If `full` beats `ablated`, the enrichment is doing work, and the number says how much.
 
 Four of the twelve fixtures (`f001`, `f003`, `f006`, `f012`) have titles that actively
-mislead — "bump deps" that disables JWT expiry checks, "fix typo" that opens CORS to `*`.
+mislead, "bump deps" that disables JWT expiry checks, "fix typo" that opens CORS to `*`.
 Those are the cases a title-only rule gets wrong, and they are in there on purpose.
 
 ## Run it

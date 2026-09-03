@@ -1,6 +1,6 @@
 """The reasoning loop. One pull request in, one judgement out.
 
-Read top to bottom — that is the order it runs in. The three places a change is
+Read top to bottom. That is the order it runs in. The three places a change is
 likely to land are marked SEAM 1/2/3.
 
 The promise this file keeps: EVERY record produces a result. There is no path
@@ -67,7 +67,7 @@ def _skipped(record: dict, reason: str, started: float) -> TriageResult:
 def _fallback(record: dict, reason: str, model: str, calls: int, started: float) -> TriageResult:
     """We tried and failed. Say so, in the row, with the reason.
 
-    This is the only place `unclear` is written after a model call — so a row
+    This is the only place `unclear` is written after a model call, so a row
     labelled unclear with label_source=fallback always means "we gave up", never
     "the model said something we quietly accepted"."""
     return TriageResult(
@@ -85,7 +85,7 @@ def _fallback(record: dict, reason: str, model: str, calls: int, started: float)
 def _extract_details(client: LLMClient, record: dict, evidence_files: list[str]) -> dict:
     """The second, narrower call. Best-effort by design.
 
-    If this fails we keep the classification and lose only the prose note — the
+    If this fails we keep the classification and lose only the prose note, the
     label is the valuable part, and it is already in hand. So a failure here
     must never downgrade a good classification to a fallback.
     """
@@ -113,7 +113,7 @@ def triage(
 ) -> TriageResult:
     """Classify one enriched pull request record.
 
-    include_patches=False is the ablation used by evals/run.py — the model then
+    include_patches=False is the ablation used by evals/run.py, the model then
     sees only what the GitHub feed could have given us.
     """
     started = time.monotonic()
@@ -172,7 +172,7 @@ def triage(
         source = LabelSource.model
 
     # Confident enough to be worth the second call.
-    # Counted even when the call returns nothing — llm_calls is how many
+    # Counted even when the call returns nothing, llm_calls is how many
     # times we paid, not how many times we parsed. The UI shows this number.
     calls += 1
     details = _extract_details(client, record, classification.evidence_files)

@@ -1,7 +1,7 @@
 """Does the fetched content actually change the answer?
 
-Runs the same reasoning loop over the same fixtures twice — once with patch content,
-once without — and prints the two side by side. See evals/README.md for why.
+Runs the same reasoning loop over the same fixtures twice, once with patch content,
+once without, and prints the two side by side. See evals/README.md for why.
 """
 
 from __future__ import annotations

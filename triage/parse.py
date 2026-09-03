@@ -10,7 +10,7 @@ The rule this file obeys:
     REPAIR FORMATTING, NEVER REPAIR MEANING.
 
 Fixing a trailing comma is formatting. Turning "banana" into "unclear" would be
-inventing a judgement the model never made — so we refuse, and let the caller retry
+inventing a judgement the model never made, so we refuse, and let the caller retry
 or fall back honestly.
 """
 
@@ -54,7 +54,7 @@ def extract_first_json_object(text: str) -> str | None:
         Sure! {"category": "docs", "note": "fixes the {placeholder} bug"} Hope that helps!
 
     a greedy regex grabs to the LAST closing brace and a lazy one stops at the
-    first — both wrong. You have to walk the string and track depth.
+    first, both wrong. You have to walk the string and track depth.
 
     We also track whether we are inside a JSON string, because a brace inside a
     string value is just a character and must not change the depth. That is the
@@ -87,7 +87,7 @@ def extract_first_json_object(text: str) -> str | None:
         elif ch == "}":
             depth -= 1
             if depth == 0:
-                return text[start : i + 1]   # balanced — this is the object
+                return text[start : i + 1]   # balanced, this is the object
 
     return None   # ran off the end: truncated output, no closing brace
 
@@ -100,7 +100,7 @@ _SMART_QUOTES = {
     "‘": "'", "’": "'",   # ‘ ’
 }
 
-# A comma directly before a closing brace or bracket: {"a": 1,} — invalid JSON,
+# A comma directly before a closing brace or bracket: {"a": 1,}, invalid JSON,
 # and something models produce constantly.
 _TRAILING_COMMA = re.compile(r",(\s*[}\]])")
 
@@ -115,7 +115,7 @@ def repair(blob: str) -> str:
 # ── Step 4: normalise the label ──────────────────────────────────────────────────
 
 # Real drifts seen from small models. Every key here is a FORMATTING variation of a
-# real category — a different case, spacing, or an obvious synonym. Nothing here
+# real category, a different case, spacing, or an obvious synonym. Nothing here
 # invents a judgement.
 _CATEGORY_ALIASES = {
     "security fix": "security",
@@ -138,7 +138,7 @@ def normalize_category(value: object) -> str | None:
     """Map a model's label onto our enum, or return None if it is not one of ours.
 
     Returning None is the important behaviour. It means the caller RETRIES rather
-    than storing a guess. `unclear` is never produced here — only the fallback in
+    than storing a guess. `unclear` is never produced here, only the fallback in
     reason.py may write that, so "unclear" always means "we gave up" and never
     "the model said something odd".
     """
@@ -154,14 +154,14 @@ def normalize_category(value: object) -> str | None:
         if candidate in _CATEGORY_ALIASES:
             return _CATEGORY_ALIASES[candidate]
 
-    return None   # not one of ours — reject, do not coerce
+    return None   # not one of ours, reject, do not coerce
 
 
 def _coerce_confidence(raw: object) -> float:
     """Pull a 0..1 score out of whatever the model put in the confidence slot.
 
     Handles the two shapes it actually uses: a bare number, or a nested object
-    {"score": 0.8, "rationale": "..."} — which is what we asked for.
+    {"score": 0.8, "rationale": "..."}, which is what we asked for.
     Percentages (85 meaning 85%) are rescaled; anything else fails.
     """
     if isinstance(raw, dict):
@@ -193,7 +193,7 @@ def parse_classification(text: str) -> Classification:
     """Model text in, validated Classification out, or ParseError.
 
     Never returns a default. A caller that gets a ParseError must decide what to
-    do about it — that decision lives in reason.py, not here.
+    do about it, that decision lives in reason.py, not here.
     """
     if not text or not text.strip():
         raise ParseError("model returned nothing")

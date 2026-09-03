@@ -1,4 +1,4 @@
-# 04 — remembering what we have seen, and dealing with junk.
+# 04: remembering what we have seen, and dealing with junk.
 #
 #   task bootcamp -- 04-dedupe-and-fail
 #
@@ -10,7 +10,7 @@ input:
     count: 6
     interval: 500ms
     mapping: |
-      # Only three distinct ids across six messages — so three should survive.
+      # Only three distinct ids across six messages, so three should survive.
       root.id = ["a", "b", "c", "a", "b", "c"].index(count("demo") % 6)
       root.payload = "some content"
 
@@ -40,7 +40,7 @@ cache_resources:
   - label: seen
     memory:
       default_ttl: 60s      # NOTE: in-process. Dies with the container.
-                            # That is why Postgres gets an UPSERT as well —
+                            # That is why Postgres gets an UPSERT as well,
                             # two independent defences against reprocessing.
 
 output:

@@ -2,7 +2,7 @@
 
 The narrow interface is the point: the reasoning loop should not know or care
 whether it is talking to a 3B model on this laptop or a hosted one. That is also
-what makes the tests possible — FakeLLM implements the same one method.
+what makes the tests possible. FakeLLM implements the same one method.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ class FakeLLM(LLMClient):
     a malformed reply, a low-confidence reply, a good reply. The call log is how a
     test asserts "the second call did / did not happen".
 
-    NOT used for demos — seeded demo rows come from a real earlier run, so nothing
+    NOT used for demos, seeded demo rows come from a real earlier run, so nothing
     on screen is ever invented by this class.
     """
 
@@ -118,7 +118,7 @@ class AnthropicLLM(LLMClient):
 
 
 def get_client() -> LLMClient:
-    """Pick the backend from the environment. Deliberately an if/elif — a registry
+    """Pick the backend from the environment. Deliberately an if/elif, a registry
     would be less code to read and more code to explain."""
     provider = os.environ.get("LLM_PROVIDER", "ollama").strip().lower()
 
