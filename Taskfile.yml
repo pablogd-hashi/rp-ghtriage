@@ -58,17 +58,17 @@ tasks:
           {{.CONNECT_IMAGE}} run /cfg/{{.CLI_ARGS}}.yaml
 
   test:
-    desc: Run the tests (in the container, so no local python setup needed)
+    desc: Run the tests in the container, so no local python setup is needed
     cmds:
       - docker compose run --rm --no-deps -e LLM_PROVIDER=fake worker python -m pytest tests/ -q
 
   seed:
-    desc: Fill the UI from saved fixtures, using the real reasoning loop
+    desc: Reclassify the saved PRs with the current model
     cmds:
       - docker compose run --rm --no-deps -e POSTGRES_DSN=postgresql://triage:triage@postgres:5432/triage worker python scripts/seed.py
 
   seed:offline:
-    desc: Load recorded results, no model needed, works with no network
+    desc: Load the recorded results. No model or network needed
     cmds:
       - docker compose run --rm --no-deps worker python scripts/seed_offline.py
 
@@ -78,12 +78,12 @@ tasks:
       - docker compose exec -T postgres psql -U triage -d triage -f /docker-entrypoint-initdb.d/02-migrate.sql
 
   eval:
-    desc: Ablation, does reading the diff actually beat reading the title?
+    desc: Score the classifier twice, with and without the diff, and compare
     cmds:
       - docker compose run --rm --no-deps worker python evals/run.py
 
   demo:fallback:
-    desc: Point the worker at a nonexistent model, so every row lands as fallback
+    desc: Run the batch loop against a missing model to exercise the fallback path
     cmds:
       - docker compose run --rm --no-deps -e OLLAMA_MODEL=does-not-exist worker python scripts/seed.py
 
