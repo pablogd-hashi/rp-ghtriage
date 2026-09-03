@@ -38,6 +38,19 @@ INSERT INTO pr_triage (
 ON CONFLICT (pr_url) DO NOTHING
 """
 
+# Same insert, but overwriting. Used by `task seed:offline`, which is an explicit
+# request to put the recorded rows back. It only ever touches the twelve fixture
+# pr_urls, so live classifications are untouched.
+UPSERT = INSERT.replace("ON CONFLICT (pr_url) DO NOTHING", """
+ON CONFLICT (pr_url) DO UPDATE SET
+    category = EXCLUDED.category, confidence = EXCLUDED.confidence,
+    rationale = EXCLUDED.rationale, affected_area = EXCLUDED.affected_area,
+    risk_note = EXCLUDED.risk_note, label_source = EXCLUDED.label_source,
+    model = EXCLUDED.model, llm_calls = EXCLUDED.llm_calls,
+    latency_ms = EXCLUDED.latency_ms, evidence = EXCLUDED.evidence,
+    triaged_at = now()
+""")
+
 
 def main() -> int:
     """Always exits 0.
@@ -47,6 +60,13 @@ def main() -> int:
    , strictly worse than an empty table. The UI must be the last thing to fail,
     never the first. So a failure here is loud, and then we get out of the way.
     """
+    # --force overwrites rows that already exist. Boot-time seeding must not do
+    # that, or a restart would wipe live classifications. An explicit
+    # `task seed:offline` should, because the reason to run it is that something
+    # (usually `task demo:fallback`) replaced the recorded rows.
+    force = "--force" in sys.argv
+    statement = UPSERT if force else INSERT
+
     try:
         rows = json.loads((ROOT / "fixtures/triaged.json").read_text())
         conn = store.connect()
@@ -54,9 +74,10 @@ def main() -> int:
         with conn.cursor() as cur:
             for row in rows:
                 row["evidence"] = json.dumps(row.get("evidence") or [])
-                cur.execute(INSERT, row)
+                cur.execute(statement, row)
 
-        print(f"loaded {len(rows)} recorded results (from {rows[0]['model']})")
+        verb = "restored" if force else "loaded"
+        print(f"{verb} {len(rows)} recorded results (from {rows[0]['model']})")
         print("these are a RECORDING of a real run, not live output, use `task seed` for live")
         print("open http://localhost:8000")
         conn.close()

@@ -70,7 +70,7 @@ tasks:
   seed:offline:
     desc: Load the recorded results. No model or network needed
     cmds:
-      - docker compose run --rm --no-deps worker python scripts/seed_offline.py
+      - docker compose run --rm --no-deps worker python scripts/seed_offline.py --force
 
   migrate:
     desc: Apply db/migrate.sql to the running database (schema.sql will not re-run)
@@ -86,6 +86,9 @@ tasks:
     desc: Run the batch loop against a missing model to exercise the fallback path
     cmds:
       - docker compose run --rm --no-deps -e OLLAMA_MODEL=does-not-exist worker python scripts/seed.py
+      - echo ""
+      - echo "Every row above took the retry and then the fallback. To put the recorded"
+      - echo "results back:  task seed:offline"
 
   rate:
     desc: How much GitHub quota is left
