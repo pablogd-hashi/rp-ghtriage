@@ -12,9 +12,10 @@ The GitHub events feed hands you this for a new pull request:
 "pull_request": { "id": …, "number": 412, "url": "…", "base": {…}, "head": {…} }
 ```
 
-No title. No description. No diff. There is nothing here for a rule to match on. Every
-word the model reads has to be fetched by the pipeline first. Strip the enrichment out and
-the system does not fall back to being a regex. It stops working.
+That object carries no title, no description and no diff, so there is nothing in the
+feed for a rule to match against. Everything the model reads is fetched by the pipeline
+in a second and third call, which makes the enrichment step load-bearing rather than an
+optimisation.
 
 ## Run it
 
@@ -23,12 +24,23 @@ cp .env.example .env
 docker compose up
 ```
 
+> [!TIP]
+> If you use [Task](https://github.com/go-task/task), `task setup` creates `.env` from
+> `.env.example` if it is missing, and leaves an existing one alone. Then:
+>
+> ```
+> task setup
+> task up
+> ```
+>
+> `task --list` shows the rest.
+
 Open <http://localhost:8000>. The table is filled on boot from recorded results
 (`fixtures/triaged.json`) so you do not wait on a live pull request. The `How` column
-says `model`. These are a recording of a real earlier run, not invented labels.
+says `model` because they are a recording of an earlier run against a live model.
 
-First run also downloads a ~2GB model, so give the worker a few minutes. Nothing else
-is needed. No API keys, no accounts.
+First run also downloads a ~2GB model, so give the worker a few minutes. No API keys or
+accounts are needed.
 
 To re-run the **live** reasoning loop over the same saved PRs (so every row is from
 *this* boot's model):
@@ -41,6 +53,11 @@ task seed
 You do not need `task seed:offline` unless you wiped the database.
 
 ### If the model will not download
+
+> [!WARNING]
+> `docker compose up` still succeeds if the model download fails. The worker starts
+> without a model and every row lands as `fallback`. The recorded rows stay on screen,
+> so an empty-looking UI is not the symptom to watch for; a table of `fallback` is.
 
 `ollama pull` fetches from a CDN that can be slow or unreachable from inside Docker.
 It timed out on the machine this was built on. **The stack still comes up**, because the
@@ -63,25 +80,30 @@ echo "LLM_PROVIDER=anthropic" >> .env
 echo "ANTHROPIC_API_KEY=sk-ant-…" >> .env
 ```
 
-### Get a GitHub token (strongly recommended)
+### Get a GitHub token
 
-**A token is not optional. It is arithmetic.** Anonymous GitHub allows **60 requests
-per hour**. Polling once a minute is 60 requests per hour on its own, so the poll alone
-is the entire ceiling, before a single enrichment call.
+> [!IMPORTANT]
+> Without a token the pipeline runs for about half an hour per hour and then stalls.
+> A classic PAT with **no scopes ticked** is enough: it only reads public data.
 
-Measured on this pipeline, anonymous:
+Anonymous GitHub allows 60 requests per hour. Polling once a minute uses all 60 on the
+list call alone, before any enrichment, and each surviving pull request costs two more
+requests on top.
+
+Measured on this pipeline without a token:
 
 ```
 consumed in 3 min: 6 → 2 req/min = 120/hr
 anonymous budget: 60/hr
 ```
 
-Twice the budget. It runs for roughly half an hour, then 403s until the hourly reset.
-The poll fails too, so no events enter the pipeline at all during that time. The
-dead-letter topic stays empty because there is nothing to dead-letter.
+At roughly twice the budget it runs for about half an hour and then 403s until the hourly
+reset. The list call fails alongside the enrichment calls, so no events enter the pipeline
+at all during that window, and the dead-letter topic stays empty because nothing gets far
+enough to fail.
 
-A classic PAT with **no scopes ticked** raises the ceiling to 5,000/hr. It only reads
-public data.
+A classic PAT with no scopes ticked raises the ceiling to 5,000/hr, and only reads public
+data.
 
 ```bash
 echo "GITHUB_TOKEN=ghp_xxx" >> .env
@@ -137,7 +159,7 @@ GitHub /events ──▶ Connect ──▶ topic pr.enriched ──▶ worker �
 | `db/migrate.sql` | Same changes, for a database that is already running |
 | `evals/` | The ablation |
 | `docs/contracts.md` | What each stage promises the next |
-| `NOTES.md` | Everything that broke while building this |
+| `NOTES.md` | Build log of what broke and why |
 
 ## The `label_source` column
 
@@ -150,8 +172,10 @@ Every row records **how** its label was reached:
 | `fallback` | Both attempts failed, wrote `unclear` rather than guessing |
 | `skipped` | Never asked the model (draft PR, or nothing to read) |
 
-It is on screen on purpose. When something odd appears, that column explains it instead
-of anyone having to guess.
+> [!NOTE]
+> `unclear` from `fallback` and `unclear` from `skipped` look identical in the category
+> column and mean opposite things: one is a failed classification, the other is work
+> correctly not done. This column is how you tell them apart.
 
 ---
 

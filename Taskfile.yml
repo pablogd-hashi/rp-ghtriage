@@ -11,6 +11,19 @@ tasks:
     cmds: [task --list]
     silent: true
 
+  setup:
+    desc: Create .env from .env.example if it does not exist yet
+    cmds:
+      - |
+        if [ -f .env ]; then
+          echo ".env already exists, leaving it alone"
+        else
+          cp .env.example .env
+          echo "created .env from .env.example"
+          echo "add a GITHUB_TOKEN before running 'task up', or the pipeline will"
+          echo "spend its whole 60/hr budget on the list call"
+        fi
+
   up:
     desc: Bring the stack up and wait until it is actually ready
     cmds:
