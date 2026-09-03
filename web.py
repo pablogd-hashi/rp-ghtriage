@@ -20,7 +20,7 @@ app = FastAPI(title="PR Triage")
 CATEGORIES = ["security", "feature", "refactor", "docs", "dependency-bump", "unclear"]
 
 # security is red because it is the one a human must look at. `unclear` is amber
-# because it means "we could not tell" — also a call for a human, just a quieter one.
+# because it means "we could not tell", also a call for a human, just a quieter one.
 CATEGORY_COLOUR = {
     "security": "#c0392b",
     "feature": "#2470a8",
@@ -35,7 +35,7 @@ CATEGORY_COLOUR = {
 SOURCE_HELP = {
     "model": "first answer, confident enough to keep",
     "model_retry": "first answer was unusable or unsure; stricter retry worked",
-    "fallback": "both attempts failed — we wrote 'unclear' rather than guessing",
+    "fallback": "both attempts failed, we wrote 'unclear' rather than guessing",
     "skipped": "never asked the model (draft PR, or nothing to read)",
 }
 
@@ -133,7 +133,7 @@ def index(category: str | None = None, limit: int = 100):
 Page refreshes every 10s.</p>
 <div class="filters">{"".join(chips)}</div>
 {table}
-<p class="legend"><strong>How</strong> says where the label came from —
+<p class="legend"><strong>How</strong> says where the label came from,
 <code>model</code> {SOURCE_HELP['model']} ·
 <code>model_retry</code> {SOURCE_HELP['model_retry']} ·
 <code>fallback</code> {SOURCE_HELP['fallback']} ·

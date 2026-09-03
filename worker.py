@@ -46,7 +46,7 @@ def main() -> int:
         "group.id": "pr-triage-worker",
         "auto.offset.reset": "earliest",
         # We commit ourselves, AFTER the row is written. If this process dies
-        # mid-reason, the message is redelivered and reprocessed — which is safe,
+        # mid-reason, the message is redelivered and reprocessed, which is safe,
         # because the Postgres write is an UPSERT. Losing a PR is worse than
         # doing one twice.
         "enable.auto.commit": False,
@@ -68,7 +68,7 @@ def main() -> int:
         try:
             record = json.loads(raw)
         except (ValueError, TypeError) as exc:
-            # Not even JSON. Nothing to reason about — park it and move on.
+            # Not even JSON. Nothing to reason about, park it and move on.
             print(f"unparseable message -> dlq: {exc}", file=sys.stderr, flush=True)
             producer.produce(DLQ_TOPIC, raw, headers={"reason": b"worker: not json"})
             consumer.commit(msg)
@@ -77,7 +77,7 @@ def main() -> int:
         try:
             # Everything that can go wrong inside triage() is already handled in
             # triage() and turned into a fallback row. This except is the last
-            # resort for the genuinely unexpected — it must never kill the loop,
+            # resort for the unexpected, it must never kill the loop,
             # because one poisonous message would stop the whole pipeline.
             result = triage(record, client, THRESHOLD)
             store.save(conn, record, result)
@@ -94,7 +94,17 @@ def main() -> int:
             producer.produce(DLQ_TOPIC, raw, headers={"reason": str(exc)[:200].encode()})
 
         producer.poll(0)
-        consumer.commit(msg)   # only now is this message accounted for
+        # Only now is this message accounted for.
+        #
+        # Note what this means for a fallback row: it commits too. If the model was
+        # down, that PR is finished as far as the pipeline is concerned, and GitHub will
+        # not emit the event again. Nothing retries it.
+        #
+        # Fixing that is a re-drive: query for label_source='fallback' older than N
+        # minutes and replay those rows through triage(). The UPSERT already makes the
+        # rewrite safe. Not built, because it needs the confidence comparison in
+        # store.py first, otherwise a re-drive during an outage overwrites good rows.
+        consumer.commit(msg)
 
     producer.flush(5)
     consumer.close()

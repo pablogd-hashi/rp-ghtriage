@@ -1,6 +1,6 @@
 """Fill the database from the fixtures, so the UI is never empty.
 
-This runs the REAL reasoning loop over saved records — the same code path the
+This runs the REAL reasoning loop over saved records, the same code path the
 worker uses. Nothing here is faked: the rows you see are genuine model output,
 just over PRs captured earlier rather than PRs arriving right now.
 
@@ -40,7 +40,7 @@ def main() -> int:
               f"{record['repo']}#{record['pr_number']}", flush=True)
 
     conn.close()
-    print("\ndone — open http://localhost:8000")
+    print("\ndone. open http://localhost:8000")
     return 0
 
 

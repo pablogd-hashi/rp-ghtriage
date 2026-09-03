@@ -55,7 +55,7 @@ tasks:
       - docker compose run --rm --no-deps -e POSTGRES_DSN=postgresql://triage:triage@postgres:5432/triage worker python scripts/seed.py
 
   seed:offline:
-    desc: Load recorded results — no model needed, works with no network
+    desc: Load recorded results, no model needed, works with no network
     cmds:
       - docker compose run --rm --no-deps worker python scripts/seed_offline.py
 
@@ -65,7 +65,7 @@ tasks:
       - docker compose exec -T postgres psql -U triage -d triage -f /docker-entrypoint-initdb.d/02-migrate.sql
 
   eval:
-    desc: Ablation — does reading the diff actually beat reading the title?
+    desc: Ablation, does reading the diff actually beat reading the title?
     cmds:
       - docker compose run --rm --no-deps worker python evals/run.py
 

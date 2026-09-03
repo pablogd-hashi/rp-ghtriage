@@ -1,7 +1,7 @@
 """Tests for the dirty-JSON parser.
 
 Every case here is something a 3B model actually does. If any of these stops
-working, rows get silently mislabelled — which is the worst failure this system
+working, rows get silently mislabelled, which is the worst failure this system
 has, because a wrong label looks exactly like a right one.
 """
 
@@ -52,7 +52,7 @@ def test_escaped_quote_inside_string():
 
 def test_truncated_output_is_rejected():
     """Model hit its token limit mid-object. There is no closing brace, so there is
-    no object — we must not accept a half-answer."""
+    no object, we must not accept a half-answer."""
     assert extract_first_json_object('{"category":"security","confid') is None
     with pytest.raises(ParseError):
         parse_classification('{"category":"security","confid')

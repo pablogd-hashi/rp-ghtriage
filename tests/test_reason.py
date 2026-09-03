@@ -1,6 +1,6 @@
 """Tests for the branching in the reasoning loop.
 
-Driven by FakeLLM, whose call log lets us assert what DID and DID NOT happen —
+Driven by FakeLLM, whose call log lets us assert what DID and DID NOT happen,
 "the second call never ran" is as important as "the label was right".
 """
 
@@ -69,7 +69,7 @@ def test_confident_answer_triggers_the_second_call():
 
 
 def test_second_call_only_sees_the_files_the_first_call_named():
-    """The details prompt is deliberately narrower — that is what makes two calls
+    """The details prompt is narrower on purpose. That is what makes two calls
     cheaper than one big one."""
     rec = record(files=[
         {"filename": "src/auth.py", "status": "modified", "additions": 1, "deletions": 1, "patch": "AUTHPATCH"},
@@ -105,7 +105,7 @@ def test_unparseable_answer_retries():
 def test_two_bad_answers_fall_back_and_still_write_a_row():
     """THE most important test in the repo.
 
-    Both attempts fail. We must still produce a result — labelled unclear, marked
+    Both attempts fail. We must still produce a result, labelled unclear, marked
     fallback, with the reason recorded. A PR must never vanish silently."""
     llm = FakeLLM(["total nonsense", "still nonsense"])
     result = triage(record(), llm, threshold=0.65)

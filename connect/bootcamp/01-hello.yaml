@@ -1,4 +1,4 @@
-# 01 — the shape of every Connect config, and the one gotcha that bites everyone.
+# 01: the shape of every Connect config, and the one gotcha that bites everyone.
 #
 #   task bootcamp -- 01-hello
 #
@@ -27,7 +27,7 @@ pipeline:
 
     # ── NOW BREAK IT ─────────────────────────────────────────────────────────
     # Delete the `root = this` line above and run again.
-    # You get {"price":20} — name and colour vanished silently. No error.
+    # You get {"price":20}, name and colour vanished silently. No error.
     #
     # This is the single most common Connect mistake and it fails QUIETLY.
     # On Evening 3 the final projection is one big mapping for exactly this reason.

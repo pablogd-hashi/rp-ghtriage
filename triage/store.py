@@ -13,8 +13,16 @@ from .contract import TriageResult
 # ON CONFLICT, not INSERT, because the same PR legitimately arrives more than once:
 #   - consecutive GitHub polls overlap
 #   - Connect's dedupe cache is in-memory and dies with its container
-#   - a cold-start model failure SHOULD be correctable by a later, better answer
-# Writing twice has to be safe, and the second write has to win.
+#   - a cold-start model failure should be correctable by a later, better answer
+# Writing twice has to be safe, and the second write wins.
+#
+# The cost of that rule: it cuts both ways. A later run with a broken or missing model
+# overwrites a good row with a fallback. Last-write-wins buys cold-start recovery and
+# pays for it with the risk of losing a better answer.
+#
+# For a demo, recovery is worth more. For a customer, the opposite: only overwrite when
+# the new answer is at least as good, comparing label_source and confidence before the
+# UPDATE fires.
 UPSERT = """
 INSERT INTO pr_triage (
     pr_url, repo, pr_number, title, author,

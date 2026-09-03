@@ -1,10 +1,10 @@
 """The two prompts. Kept apart from the loop so the wording can change without
-touching the control flow — and so a reviewer can read what we actually ask.
+touching the control flow, and so a reviewer can read what we actually ask.
 
 Two calls, not one, and they do different jobs:
 
-  CLASSIFY  — reads everything, picks one label, says how sure it is.
-  DETAILS   — only runs when CLASSIFY was confident. Reads only the files
+  CLASSIFY , reads everything, picks one label, says how sure it is.
+  DETAILS  , only runs when CLASSIFY was confident. Reads only the files
               CLASSIFY pointed at, and writes the human-facing note.
 
 Splitting them means the expensive, wordy call only happens on records worth
@@ -91,7 +91,7 @@ def classify_user(record: dict, include_patches: bool = True) -> str:
 
 
 def details_user(record: dict, evidence_files: list[str]) -> str:
-    """Build the second prompt — only the files the first call named."""
+    """Build the second prompt, only the files the first call named."""
     wanted = set(evidence_files)
     files = [f for f in (record.get("files") or []) if f.get("filename") in wanted]
     if not files:

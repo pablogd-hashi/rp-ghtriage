@@ -1,10 +1,10 @@
 """Load RECORDED results into the database. No model required.
 
 These are the real output of an earlier live run (see the `model` column on every
-row — it says which model produced them). Nothing here is invented: this is a
+row says which model produced them). Nothing here is invented: this is a
 recording, not a simulation.
 
-Why it exists: pulling a 2GB model can fail on a slow or restricted network — it
+Why it exists: pulling a 2GB model can fail on a slow or restricted network, it
 did on the machine this was built on, timing out against Ollama's CDN from inside
 Docker. If that happens to whoever runs this, they should still see a working UI
 and be able to judge the system, rather than an empty table.
@@ -44,7 +44,7 @@ def main() -> int:
 
     `web` waits for this container to finish before it starts. If seeding could
     fail the build, a missing fixture or a schema change would mean no UI at all
-    — strictly worse than an empty table. The UI must be the last thing to fail,
+   , strictly worse than an empty table. The UI must be the last thing to fail,
     never the first. So a failure here is loud, and then we get out of the way.
     """
     try:
@@ -57,7 +57,7 @@ def main() -> int:
                 cur.execute(INSERT, row)
 
         print(f"loaded {len(rows)} recorded results (from {rows[0]['model']})")
-        print("these are a RECORDING of a real run, not live output — use `task seed` for live")
+        print("these are a RECORDING of a real run, not live output, use `task seed` for live")
         print("open http://localhost:8000")
         conn.close()
     except Exception as exc:  # noqa: BLE001 - see docstring

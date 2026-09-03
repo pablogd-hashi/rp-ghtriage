@@ -1,25 +1,25 @@
 # Scar log
 
 Two lines per breakage: what I expected, what actually happened. Written as I go, in my
-own words — not tidied up afterwards.
+own words, not tidied up afterwards.
 
 ---
 
-## Evening 0 — picking the source
+## Evening 0, picking the source
 
 **Expected:** GitHub's `/events` feed would hand me a PR title and description, like the
 HN and USGS feeds hand you their fields.
 
 **Actual:** it hands you five keys and none of them describe the change:
 
-    payload.pull_request = { id, number, url, base, head }
+ payload.pull_request = { id, number, url, base, head }
 
 No title, no body, no diff URL. Every word the model eventually reads has to be fetched by
-my own pipeline. This is the whole reason the source is defensible — there is nothing here
+my own pipeline. This is the whole reason the source is defensible, there is nothing here
 a regex could act on.
 
 Also measured: `x-poll-interval: 60`, 60 req/hr anonymous, and only ~2 PullRequestEvents
 per 100 events, with heavy overlap between consecutive polls.
 
-## Evening 1 —
+## Evening 1,
 

@@ -1,11 +1,11 @@
-# 02 — talking to a real API, User-Agent, and PROTECTING YOUR BUDGET.
+# 02: talking to a real API, User-Agent, and PROTECTING YOUR BUDGET.
 #
 #   task bootcamp -- 02-http
 #
 # ⚠️  READ THIS FIRST ⚠️
 # Anonymous GitHub gives you 60 requests PER HOUR. Not per minute. Per hour.
 # An input with no rate limit will poll as fast as it can and burn all 60 in
-# about two seconds. (This is not hypothetical — it happened while writing
+# about two seconds. (This is not hypothetical, it happened while writing
 # these files. See NOTES.md.)
 #
 # So: every http_client that points at GitHub gets a rate_limit. Always.
@@ -27,8 +27,8 @@ input:
 pipeline:
   processors:
     # Pull out three fields. Note there is no `root = this` here, because this
-    # time we genuinely want to discard the other 80 fields. Dropping fields is
-    # fine when deliberate — the problem in 01 was dropping them by accident.
+    # time we want to discard the other 80 fields. Dropping fields is
+    # fine when you mean it. The problem in 01 was dropping them by accident.
     - mapping: |
         root.repo = this.full_name
         root.stars = this.stargazers_count
@@ -38,7 +38,7 @@ rate_limit_resources:
   - label: budget
     local:
       count: 1
-      interval: 60s     # 60/hr — exactly the anonymous ceiling, nothing spare.
+      interval: 60s     # 60/hr. Exactly the anonymous ceiling, nothing spare.
                         # With a GITHUB_TOKEN the real pipeline gets 5000/hr and
                         # can afford 900/hr comfortably.
 
