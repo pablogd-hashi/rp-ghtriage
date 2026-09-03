@@ -54,17 +54,22 @@ You do not need `task seed:offline` unless you wiped the database.
 
 ### If the model will not download
 
-> [!WARNING]
-> `docker compose up` still succeeds if the model download fails. The worker starts
-> without a model and every row lands as `fallback`. The recorded rows stay on screen,
-> so an empty-looking UI is not the symptom to watch for; a table of `fallback` is.
+`ollama pull` fetches from a CDN that can be slow or unreachable from inside Docker; it
+timed out on the machine this was built on. The pull is allowed to fail so that the rest
+of the stack still starts.
 
-`ollama pull` fetches from a CDN that can be slow or unreachable from inside Docker.
-It timed out on the machine this was built on. **The stack still comes up**, because the
-pull is allowed to fail. But the worker will have no model, and every row will land as
-`fallback`.
+> [!NOTE]
+> The worker checks it can reach the model before it consumes anything, and waits if it
+> cannot, logging once a minute. Nothing is read off `pr.enriched` while it waits, so the
+> backlog is preserved and drains when a model appears. Consumer lag is the symptom:
+> `docker compose exec redpanda rpk group describe pr-triage-worker`.
+>
+> This is on purpose. Classifying without a model would write `fallback` rows and commit
+> the offsets, and since GitHub does not re-emit a `PullRequestEvent`, those pull requests
+> would never be classified again.
 
-Three ways round it, cheapest first:
+The recorded rows stay on screen either way. Three ways to get live classification,
+cheapest first:
 
 ```bash
 task seed:offline # recorded results, no model

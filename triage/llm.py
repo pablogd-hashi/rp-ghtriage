@@ -27,6 +27,20 @@ class LLMClient(ABC):
     def complete(self, system: str, user: str, max_tokens: int = 700) -> str:
         ...
 
+    def available(self) -> bool:
+        """Can we reach the model right now?
+
+        The worker checks this before consuming anything. Without it, a missing
+        model turns every message into a fallback row with a committed offset,
+        which loses the pull request permanently: GitHub will not re-emit the
+        event, so nothing ever reclassifies it.
+        """
+        try:
+            self.complete("Reply with the single word: ok", "ping", max_tokens=5)
+            return True
+        except LLMError:
+            return False
+
 
 class FakeLLM(LLMClient):
     """Returns scripted replies, in order, and remembers what it was asked.
@@ -44,6 +58,9 @@ class FakeLLM(LLMClient):
     def __init__(self, replies: list[str]) -> None:
         self.replies = list(replies)
         self.calls: list[dict[str, str]] = []
+
+    def available(self) -> bool:
+        return True   # scripted replies are finite; do not spend one on a probe
 
     def complete(self, system: str, user: str, max_tokens: int = 700) -> str:
         self.calls.append({"system": system, "user": user})

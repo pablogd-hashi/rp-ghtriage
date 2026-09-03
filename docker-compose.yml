@@ -146,10 +146,12 @@ services:
       OLLAMA_HOST: http://ollama:11434
     entrypoint: ["/bin/sh", "-c"]
     # Always exits 0, even on failure. The model CDN can be slow or blocked from
-    # inside Docker (it timed out on the machine this was built on). If that
-    # happens, the stack must still come up: the worker starts, every row lands
-    # as `fallback`, and `task seed:offline` gives you real recorded results to
-    # look at. A blocked download must not mean a dead demo.
+    # inside Docker (it timed out on the machine this was built on). A blocked
+    # download must not stop the rest of the stack starting.
+    #
+    # The worker handles the consequence: it probes the model before consuming and
+    # waits rather than reading messages it cannot classify. The recorded rows are
+    # already in Postgres, so the UI still has something to show.
     command:
       - |
         MODEL="${OLLAMA_MODEL:-qwen2.5:3b}"
