@@ -51,9 +51,10 @@ tasks:
 
   example:
     desc: 'Run one of the standalone Connect examples, e.g. task example -- 01-hello'
+    interactive: true
     cmds:
       - |
-        docker run --rm -it \
+        docker run --rm \
           -v "{{.PWD}}/connect/examples:/cfg:ro" \
           {{.CONNECT_IMAGE}} run /cfg/{{.CLI_ARGS}}.yaml
 
@@ -86,16 +87,26 @@ tasks:
     desc: Run the batch loop against a missing model to exercise the fallback path
     cmds:
       - docker compose run --rm --no-deps -e OLLAMA_MODEL=does-not-exist worker python scripts/seed.py
-      - echo ""
-      - echo "Every row above took the retry and then the fallback. To put the recorded"
-      - echo "results back:  task seed:offline"
+      - 'echo ""'
+      - 'echo "Every row above took the retry and then the fallback."'
+      - 'echo "Put the recorded rows back with: task seed:offline"' 
 
   rate:
     desc: How much GitHub quota is left
     cmds:
-      - 'curl -s -H "User-Agent: x" https://api.github.com/rate_limit | python3 -c "import json,sys,time; c=json.load(sys.stdin)[\"resources\"][\"core\"]; print(f\"{c[\"remaining\"]}/{c[\"limit\"]} left, resets in {int((c[\"reset\"]-time.time())/60)}m\")"'
+      - |
+        UA='User-Agent: pr-triage-pipeline'
+        if [ -n "$GITHUB_TOKEN" ]; then
+          BODY=$(curl -s -H "$UA" -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/rate_limit)
+          WHO=authenticated
+        else
+          BODY=$(curl -s -H "$UA" https://api.github.com/rate_limit)
+          WHO=anonymous
+        fi
+        echo "$BODY" | python3 -c 'import json,sys,time; c=json.load(sys.stdin)["resources"]["core"]; print(sys.argv[1], str(c["remaining"])+"/"+str(c["limit"]), "remaining, resets in", int((c["reset"]-time.time())/60), "min")' "$WHO"
+
 
   consume:
-    desc: 'Peek at a topic, e.g. task consume -- pr.enriched'
+    desc: 'Print one record from a topic, e.g. task consume -- pr.enriched (waits if the topic is empty; Ctrl-C to stop)'
     cmds:
       - docker compose exec -T redpanda rpk topic consume {{.CLI_ARGS}} -n 1 --brokers redpanda:9092
