@@ -137,7 +137,7 @@ task logs                    # tail every service
 task test                    # 46 tests. No model, no network, no GitHub needed
 task eval                    # score the classifier twice, with and without the diff
 task seed                    # reclassify the saved PRs with the current model
-task seed:offline            # reload the recorded results, no model needed
+task seed:offline            # put the recorded results back, no model needed
 
 task topics                  # list topics
 task consume -- pr.enriched  # print one record as Connect produced it
@@ -154,7 +154,7 @@ task demo:fallback           # force the fallback path, see below
 `task demo:fallback` runs the batch path (`scripts/seed.py`) against a model name that
 does not exist, so every record takes the retry and then the fallback. It is the one place
 that deliberately produces `unclear` / `fallback` rows, and it exists to make that path
-visible. The long-running worker behaves differently on purpose: it waits for a model
+visible. It overwrites the recorded rows, so `task seed:offline` puts them back. The long-running worker behaves differently on purpose: it waits for a model
 rather than consuming without one, for the reason given above.
 
 ## How it fits together
