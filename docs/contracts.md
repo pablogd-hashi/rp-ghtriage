@@ -1,7 +1,7 @@
 # Contracts
 
-The shapes each stage promises the next one. **This is my artifact**, the agent writes
-code against these, not the other way round. If a shape changes, it changes here first.
+The shapes each stage promises the next one. Code is written against this document,
+not the other way round. If a shape changes, it changes here first.
 
 Three boundaries matter:
 

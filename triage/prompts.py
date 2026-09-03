@@ -1,5 +1,5 @@
 """The two prompts. Kept apart from the loop so the wording can change without
-touching the control flow, and so a reviewer can read what we actually ask.
+touching the control flow, and so the exact wording is easy to find and audit.
 
 Two calls, not one, and they do different jobs:
 

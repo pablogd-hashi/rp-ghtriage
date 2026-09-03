@@ -1,6 +1,6 @@
 # 04: remembering what we have seen, and dealing with junk.
 #
-#   task bootcamp -- 04-dedupe-and-fail
+#   task example -- 04-dedupe-and-fail
 #
 # Two lessons: dedupe (needed because GitHub polls overlap), and what happens
 # when a message is not what you assumed.

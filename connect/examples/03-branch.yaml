@@ -1,6 +1,6 @@
-# 03: `branch`. THE MOST IMPORTANT ONE. Evening 3 is built on this.
+# 03: `branch`. The enrichment in ingest.yaml is built on this.
 #
-#   task bootcamp -- 03-branch
+#   task example -- 03-branch
 #
 # The problem branch solves:
 #   You have a message. You want to fetch something related and ADD it. If you
@@ -17,7 +17,7 @@
 
 input:
   # A single made-up message, so this file does not hammer the GitHub API.
-  # (The real pipeline on Evening 2 polls properly, once a minute.)
+  # (ingest.yaml polls properly, once a minute, behind a rate limiter.)
   generate:
     count: 1
     mapping: |
@@ -65,7 +65,7 @@ pipeline:
 #   other side, intact, just without `languages`. The pipeline did NOT stop.
 #   A failed enrichment is SILENT unless you go looking for it.
 #
-#   That is why the real pipeline on Evening 3 checks whether enrichment
+#   That is why ingest.yaml checks whether enrichment
 #   actually produced content, and routes empty ones to pr.dlq. Otherwise the
 #   model gets asked to judge a PR it cannot see.
 #

@@ -1,11 +1,11 @@
-# Scar log
+# Build log
 
-Two lines per breakage: what I expected, what actually happened. Written as I go, in my
-own words, not tidied up afterwards.
+Two lines per breakage: what I expected, what actually happened. Written as I go, not
+tidied up afterwards.
 
 ---
 
-## Evening 0, picking the source
+## Picking the source
 
 **Expected:** GitHub's `/events` feed would hand me a PR title and description, like the
 HN and USGS feeds hand you their fields.
@@ -21,5 +21,4 @@ a regex could act on.
 Also measured: `x-poll-interval: 60`, 60 req/hr anonymous, and only ~2 PullRequestEvents
 per 100 events, with heavy overlap between consecutive polls.
 
-## Evening 1,
 

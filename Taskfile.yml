@@ -36,12 +36,12 @@ tasks:
     cmds: [docker compose exec postgres psql -U triage -d triage]
     interactive: true
 
-  bootcamp:
-    desc: 'Run a bootcamp pipeline, e.g. task bootcamp -- 01-hello'
+  example:
+    desc: 'Run one of the standalone Connect examples, e.g. task example -- 01-hello'
     cmds:
       - |
         docker run --rm -it \
-          -v "{{.PWD}}/connect/bootcamp:/cfg:ro" \
+          -v "{{.PWD}}/connect/examples:/cfg:ro" \
           {{.CONNECT_IMAGE}} run /cfg/{{.CLI_ARGS}}.yaml
 
   test:

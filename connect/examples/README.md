@@ -1,7 +1,10 @@
-# Connect bootcamp
+# Connect examples
 
-Throwaway. The point is to meet the eight things Connect can do before using them for
-real on Evening 2–3.
+Small standalone pipelines, one per idea, covering the eight Connect features
+`../ingest.yaml` is built from. Each one runs on its own and prints to stdout.
+
+They exist because the failure modes are easier to see in isolation than in the real
+pipeline, where a filter drops most of the traffic before you get to look at it.
 
 ## ⚠️ Before you start: get a GitHub token
 
@@ -20,14 +23,12 @@ curl -s -H "User-Agent: x" https://api.github.com/rate_limit | python3 -m json.t
 Run one with:
 
 ```bash
-task bootcamp -- 01-hello
+task example -- 01-hello
 ```
 
-Work through them in order. **Break each one on purpose** before moving on. The whole
-value is in seeing what Connect does when things go wrong, because that is what Evening 3
-will actually be like.
-
-Log every surprise in `NOTES.md`. That file is the write-up.
+Run them in order. Each file has notes marked `BREAK IT` suggesting a change to make on
+purpose, so you can watch the failure rather than read about it. Several of those are
+mistakes that cost real time in `ingest.yaml`.
 
 ## The eight things
 
