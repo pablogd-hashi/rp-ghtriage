@@ -72,12 +72,12 @@ The recorded rows stay on screen either way. Three ways to get live classificati
 cheapest first:
 
 ```bash
-task seed:offline # recorded results, no model
+task seed:offline    # the recorded results, no model needed
 ```
 ```bash
 # or use an Ollama already running on your machine
 echo "OLLAMA_HOST=http://host.docker.internal:11434" >> .env
-echo "OLLAMA_MODEL=qwen2:7b" >> .env # or whatever `ollama list` shows
+echo "OLLAMA_MODEL=qwen2:7b" >> .env      # or whatever `ollama list` shows
 ```
 ```bash
 # or a hosted model
@@ -129,16 +129,33 @@ Faster, cleaner JSON, and the fallback path stops firing so often.
 ## Commands
 
 ```bash
-task test # 44 tests, no model, no network, no GitHub needed
-task eval # ablation: does reading the diff beat reading the title?
-task seed # re-run the live loop over saved PRs (overwrites recorded rows)
-task seed:offline # reload recorded results, no model needed
-task migrate # apply db/migrate.sql to a running database
-task demo:fallback # point at a missing model, watch every row land as fallback
-task consume -- pr.enriched # see what Connect actually produces
-task rate # GitHub quota remaining
-task down # stop and wipe
+task setup                   # create .env from .env.example if missing
+task up                      # start everything and wait until it is ready
+task down                    # stop everything and wipe the volumes
+task logs                    # tail every service
+
+task test                    # 46 tests. No model, no network, no GitHub needed
+task eval                    # score the classifier twice, with and without the diff
+task seed                    # reclassify the saved PRs with the current model
+task seed:offline            # reload the recorded results, no model needed
+
+task topics                  # list topics
+task consume -- pr.enriched  # print one record as Connect produced it
+task psql                    # database shell
+task rate                    # GitHub quota remaining
+task migrate                 # apply db/migrate.sql to a running database
+
+task example -- 03-branch    # run one of the standalone Connect examples
+task demo:fallback           # force the fallback path, see below
 ```
+
+`task --list` shows all of them.
+
+`task demo:fallback` runs the batch path (`scripts/seed.py`) against a model name that
+does not exist, so every record takes the retry and then the fallback. It is the one place
+that deliberately produces `unclear` / `fallback` rows, and it exists to make that path
+visible. The long-running worker behaves differently on purpose: it waits for a model
+rather than consuming without one, for the reason given above.
 
 ## How it fits together
 
