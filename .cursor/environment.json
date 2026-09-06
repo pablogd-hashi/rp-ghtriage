@@ -1,0 +1,13 @@
+{
+  "name": "PR Triage",
+  "user": "ubuntu",
+  "install": "bash .cursor/install.sh",
+  "start": "bash .cursor/start.sh",
+  "terminals": [
+    {
+      "name": "compose",
+      "command": "cd \"$(git rev-parse --show-toplevel)\" && docker compose logs -f"
+    }
+  ],
+  "ports": [8000, 8080]
+}
