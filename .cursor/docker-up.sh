@@ -13,12 +13,15 @@ docker_up() {
 
   if ! sudo docker info >/dev/null 2>&1; then
     echo "[docker-up] starting dockerd"
-    sudo bash -c 'nohup dockerd >/tmp/dockerd.log 2>&1 &'
-    for _ in $(seq 1 60); do
+    # Log to a root-owned dir, not /tmp: fs.protected_regular blocks even root
+    # from writing a mismatched-owner file under the sticky /tmp directory.
+    sudo rm -f /var/log/dockerd.log
+    sudo sh -c 'nohup dockerd >/var/log/dockerd.log 2>&1 &'
+    for _ in $(seq 1 90); do
       sudo docker info >/dev/null 2>&1 && break
       sleep 1
     done
-    sudo docker info >/dev/null 2>&1 || { echo "[docker-up] dockerd failed to start"; sudo tail -n 40 /tmp/dockerd.log; return 1; }
+    sudo docker info >/dev/null 2>&1 || { echo "[docker-up] dockerd failed to start"; sudo tail -n 60 /var/log/dockerd.log; return 1; }
   fi
 
   # Let the unprivileged user reach the socket for this boot without re-login.
