@@ -17,6 +17,53 @@ feed for a rule to match against. Everything the model reads is fetched by the p
 in a second and third call, which makes the enrichment step load-bearing rather than an
 optimisation.
 
+## Prerequisites
+
+**Docker with Compose v2.** That is the only hard requirement. Everything else runs
+inside containers, so there is no Python, Postgres or Ollama to install locally.
+
+```bash
+docker --version
+docker compose version    # must be v2, not the old docker-compose binary
+```
+
+Built and tested on Docker 24.0.5 with Compose v2.20.
+
+Compose v2 is the part that matters. The stack uses `depends_on: condition:` to order
+startup, and `--wait` to block until health checks pass. The old `docker-compose` binary
+ignores both, so services race each other and the worker starts before its topics exist.
+
+**About 8GB free disk.** Roughly 6GB of images plus a 1.9GB model.
+
+**No API keys, no accounts.** A GitHub token is optional and worth adding
+([why](#get-a-github-token)), but the stack runs without one.
+
+### Task is optional
+
+Some commands below are written as `task something`. [Task](https://taskfile.dev) is a
+small command runner, like `make` with YAML. It is a convenience, not a dependency.
+
+```bash
+brew install go-task    # macOS
+```
+
+If you would rather not install it, every verb maps to a plain command:
+
+| Task | Without Task |
+|---|---|
+| `task setup` | `cp .env.example .env` |
+| `task up` | `docker compose up -d --wait` |
+| `task down` | `docker compose down -v` |
+| `task logs` | `docker compose logs -f` |
+| `task test` | `docker compose run --rm --no-deps -e LLM_PROVIDER=fake worker python -m pytest tests/ -q` |
+| `task seed` | `docker compose run --rm --no-deps worker python scripts/seed.py` |
+| `task seed:offline` | `docker compose run --rm --no-deps worker python scripts/seed_offline.py --force` |
+| `task eval` | `docker compose run --rm --no-deps worker python evals/run.py` |
+| `task topics` | `docker compose exec redpanda rpk topic list --brokers redpanda:9092` |
+| `task psql` | `docker compose exec postgres psql -U triage -d triage` |
+
+`task --list` shows the rest.
+
 ## Run it
 
 ```bash
