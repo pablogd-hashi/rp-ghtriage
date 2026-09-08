@@ -115,12 +115,12 @@ of the stack still starts.
 > the offsets, and since GitHub does not re-emit a `PullRequestEvent`, those pull requests
 > would never be classified again.
 
-The recorded rows stay on screen either way. Three ways to get live classification,
-cheapest first:
+The recorded rows stay on screen either way. There are three ways to get live classification:
 
 ```bash
 task seed:offline    # the recorded results, no model needed
 ```
+
 ```bash
 # or use an Ollama already running on your machine
 echo "OLLAMA_HOST=http://host.docker.internal:11434" >> .env
@@ -138,23 +138,7 @@ echo "ANTHROPIC_API_KEY=sk-ant-…" >> .env
 > Without a token the pipeline runs for about half an hour per hour and then stalls.
 > A classic PAT with **no scopes ticked** is enough: it only reads public data.
 
-Anonymous GitHub allows 60 requests per hour. Polling once a minute uses all 60 on the
-list call alone, before any enrichment, and each surviving pull request costs two more
-requests on top.
-
-Measured on this pipeline without a token:
-
-```
-consumed in 3 min: 6 → 2 req/min = 120/hr
-anonymous budget: 60/hr
-```
-
-At roughly twice the budget it runs for about half an hour and then 403s until the hourly
-reset. The list call fails alongside the enrichment calls, so no events enter the pipeline
-at all during that window, and the dead-letter topic stays empty because nothing gets far
-enough to fail.
-
-A classic PAT with no scopes ticked raises the ceiling to 5,000/hr, and only reads public
+A classic PAT with no scopes it's more than enough as the system only reads public
 data.
 
 ```bash
@@ -162,16 +146,12 @@ echo "GITHUB_TOKEN=ghp_xxx" >> .env
 docker compose up -d connect
 ```
 
-Check what is left at any time with `task rate`.
-
 ### Use a hosted model instead
 
 ```bash
 LLM_PROVIDER=anthropic
 ANTHROPIC_API_KEY=sk-ant-…
 ```
-
-Faster, cleaner JSON, and the fallback path stops firing so often.
 
 ## Commands
 
@@ -247,7 +227,6 @@ Every row records **how** its label was reached:
 > correctly not done. This column is how you tell them apart.
 
 ---
-
 ## What surprised me
 The Github event feeds payload provides literally nothing, and it's incredible sparse. If we take 52 sample eventsm *payload.pull_request* contains exactly 5 keys:
 * base
