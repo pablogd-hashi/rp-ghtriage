@@ -1,8 +1,8 @@
 # PR Triage
 
-Watches new pull requests on the GitHub public firehose, **fetches the code that actually
-changed**, and sorts each one into `security`, `feature`, `refactor`, `docs` or
-`dependency-bump`, with a risk note a human can act on.
+Watches new pull requests on the GitHub public firehose, fetches the code that actually
+changed, and sorts each one using LLM into different buckets`security`, `feature`, `refactor`, `docs` or
+`dependency-bump`. In addition, it will add a risk note a human review and act upon.
 
 ## Why this source
 
@@ -48,11 +48,11 @@ To re-run the **live** reasoning loop over the same saved PRs (so every row is f
 ```bash
 task seed
 ```
-
+[!Note]
 **If the model download fails** (see below), the recorded rows are already on screen.
 You do not need `task seed:offline` unless you wiped the database.
 
-### If the model will not download
+### If model download fails
 
 `ollama pull` fetches from a CDN that can be slow or unreachable from inside Docker; it
 timed out on the machine this was built on. The pull is allowed to fail so that the rest
@@ -201,18 +201,59 @@ Every row records **how** its label was reached:
 
 ---
 
+## What surprised me
+The Github event feeds payload provides literally nothing, and it's incredible sparse. If we take 52 sample events there are exactly 5 keys:
+* base
+* head
+* id
+* number
+* url
+
+Without having a title, body or diff, the pipeline goes completely blind. The design decision here was to add the enrichment step in the Connect configuration
+to drop the "junk" events earlier ( instead of relying in the Python worker to do it). 
+By looking at another sample of 220 events:
+* 44  are PullRequestEvent
+* 20  of those 44 have action = opened (14 merged, 10 labelled)
+* 2  of those 20 are bots
+* 18  survive        
+ 
+So that's roughly 92% drop of events before any LLM call is produced, agressively protecting the compute budget.
+
 ## Tradeoffs
 
-<!-- TODO -->
+** Enrichment in the Connect config vs. in the Python worker
+The decision to put enrichment step in the Connect configuration is definitely a trade off between compute cost and keeping the complex data gathering logic out of the application.
+Let's break this down a bit more. Although Connect has routing rules for failures, if the Connect fetch fails (e.g, the diff is too large and it times out), the messages keep flowing. Connect then, passes the payload alone
+completely intact to the worker, but it's missing the patches. In another words, the pipeline is hiding its own failures as you are asking
+LLM to judge security risks on an event title alone, cause the diff was too large and failed. 
 
-## What surprised me
+*** Alternative
 
-<!-- TODO -->
+The alternative would be to perform all API fetches and bot filtering directly in the Python application code. I would flip to application-side if we were running a highly sensitive production environment where silent enrichment failures can't be tolerated; 
+If we flip it to the Python logic, there's a broader spectrum of catches we can perform:HTTP timeouts, trigger targeted retries with cleaner error handling, a
+nd explicitly mark those records as failures.
+
+** One LLM call vs. a multi-step reasoning
+
+I made the decision to use a multi-step reasoning loop (using a first call to classify and score confidence, a conditional confidence gate, a stricter retry prompt, and a second details call) rather than a single comprehensive prompt. 
+The aim here is to only trigger the expensive, detailed analysis call on high-confidence classifications, and we can target the second call’s prompt strictly to the specific files identified as evidence in the first step. 
+The alternative would be to request the category, confidence, and risk note in one single JSON payload. 
+
+I would flip it to a single-call if there's a transition from local models (like qwen2.5:3b) to a premium tier capable hosted model like Anthropic's Claude or openAI. 
+Large hosted models handle complex JSON schemas seamlessly, making retry loops redundant. Also the network latency of sequential API round-trips to an external provider dominates our execution time, making a single comprehensive call faster and cheaper.
+
 
 ## Where this breaks in production
 
-<!-- TODO -->
+The GitHub anonymous rate limit of 60 requests per hour is one of the first limiting factors to scale this in production. 
+The way this codebase pipeline works it's by pulling the event feed every minute to respect Github headers. By simple math, if you do this
+once a minute, this is 60 times an hour so that list call alone consumes the entire budget without even processing a single PR.
+
+Once the rate limit is reached, the system will go down in completely silence. This is, the list call and enrichment fails, while the deadqueue list
+stays completely empty. As of today, by design nothing gets too far enough into the application logic to fail a violation check, so it silenly stalls.
+
+Observability also gets tricky to configure, since CPU and DB are fine, dashboard looks green but system is in comatose state.
+
 
 ## Why this matters
 
-<!-- TODO -->
