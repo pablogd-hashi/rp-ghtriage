@@ -208,6 +208,7 @@ GitHub /events ──▶ Connect ──▶ topic pr.enriched ──▶ worker �
 | `db/migrate.sql` | Same changes, for a database that is already running |
 | `evals/` | The ablation |
 | `docs/contracts.md` | What each stage promises the next |
+| `docs/architecture.md` | Diagrams, decision log, known limitations |
 | `NOTES.md` | Build log of what broke and why |
 
 ## The `label_source` column
