@@ -211,6 +211,53 @@ GitHub /events ──▶ Connect ──▶ topic pr.enriched ──▶ worker �
 | `docs/architecture.md` | Diagrams, decision log, known limitations |
 | `NOTES.md` | Build log of what broke and why |
 
+## Monitoring
+
+`docker compose up` also starts Prometheus on <http://localhost:9090> and Grafana on
+<http://localhost:3000>, no login.
+
+**What is watched, and why.**
+
+| Signal | Source | Why it matters |
+|---|---|---|
+| Consumer lag on `pr-triage-worker` | Redpanda metrics | The model is slower than Connect, or the worker is down. Backlog grows |
+| Depth of `pr.dlq` | Redpanda metrics | Records are being rejected by enrichment or the worker |
+| Rows by `label_source`, per hour | Postgres | A rising `fallback` share means the model is degrading or unreachable |
+| Model latency per call, p50 and p95 | Postgres | The number that decides how many workers you need |
+| Under-replicated partitions, leader changes, disk | Redpanda metrics | Broker health. The first three things to watch on a real cluster |
+
+**Two alerts** in `monitoring/alerts.yml`: lag above 20 for 5 minutes, and any new record
+on `pr.dlq` in 15 minutes. To see them fire:
+
+```bash
+docker compose stop worker        # lag climbs; alert fires after 5 min
+docker compose start worker
+
+echo '{"test":1}' | docker compose exec -T redpanda rpk topic produce pr.dlq   # DLQ alert
+```
+
+**Two dashboards** in Grafana. `PR Triage` is the two application panels above, built
+from SQL against `pr_triage`. `Redpanda Ops Dashboard` is the one Redpanda publishes in
+[redpanda-data/observability](https://github.com/redpanda-data/observability), used
+as-is. On this single-node stack the under-replicated and leader-change panels read zero
+and one respectively, which is correct. Disk is the one that moves.
+
+**Why not OpenTelemetry.** Redpanda already exposes Prometheus metrics, and the
+application signals are already columns in Postgres. A collector would be a third
+container translating a format Prometheus reads natively. OTel earns its place when you
+want a trace per pull request across Connect, the queue, the worker and the model, to
+see where the 90 seconds go. That is the next step, not this one.
+
+**One thing found while testing this.** Redpanda's built-in
+`redpanda_kafka_consumer_group_lag_sum` reads zero when the consumer group has no live
+member, which is exactly the case where the worker is dead. So the lag alert derives lag
+from the two raw gauges instead, high watermark minus committed offset, which survive an
+empty group. Verified by stopping the worker: the built-in gauge stayed at 0 while the
+derived value read 28. The alert fires for a dead worker as well as a slow one.
+
+**Requires** `enable_consumer_group_metrics` on the cluster, which `topics-init` sets.
+Without it neither gauge exists and the lag alert has no data.
+
 ## The `label_source` column
 
 Every row records **how** its label was reached:

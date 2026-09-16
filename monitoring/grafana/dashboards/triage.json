@@ -1,0 +1,118 @@
+{
+ "uid": "pr-triage",
+ "title": "PR Triage",
+ "schemaVersion": 39,
+ "version": 1,
+ "time": {
+  "from": "now-24h",
+  "to": "now"
+ },
+ "refresh": "1m",
+ "tags": [
+  "pr-triage"
+ ],
+ "panels": [
+  {
+   "id": 1,
+   "type": "timeseries",
+   "title": "Rows by label_source, per hour",
+   "description": "How each pull request got its label. A rising fallback share means the model is degrading or unreachable. A rising model_retry share means its output is getting messier.",
+   "datasource": {
+    "type": "postgres",
+    "uid": "pg"
+   },
+   "gridPos": {
+    "h": 10,
+    "w": 24,
+    "x": 0,
+    "y": 0
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "postgres",
+      "uid": "pg"
+     },
+     "rawQuery": true,
+     "rawSql": "SELECT\n  date_trunc('hour', triaged_at) AS time,\n  label_source AS metric,\n  count(*)::int AS value\nFROM pr_triage\nWHERE $__timeFilter(triaged_at)\nGROUP BY 1, 2\nORDER BY 1",
+     "format": "time_series"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "drawStyle": "bars",
+      "fillOpacity": 60,
+      "lineWidth": 1,
+      "stacking": {
+       "mode": "normal"
+      }
+     },
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   }
+  },
+  {
+   "id": 2,
+   "type": "timeseries",
+   "title": "Model latency per call, p50 and p95 (ms)",
+   "description": "latency_ms covers the whole loop, so it is divided by llm_calls to get per-call. Excludes skipped rows.",
+   "datasource": {
+    "type": "postgres",
+    "uid": "pg"
+   },
+   "gridPos": {
+    "h": 10,
+    "w": 24,
+    "x": 0,
+    "y": 10
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "postgres",
+      "uid": "pg"
+     },
+     "rawQuery": true,
+     "rawSql": "SELECT\n  date_trunc('hour', triaged_at) AS time,\n  percentile_cont(0.5)  WITHIN GROUP (ORDER BY latency_ms::float / GREATEST(llm_calls, 1)) AS p50_ms,\n  percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms::float / GREATEST(llm_calls, 1)) AS p95_ms\nFROM pr_triage\nWHERE $__timeFilter(triaged_at) AND llm_calls > 0\nGROUP BY 1\nORDER BY 1",
+     "format": "time_series"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 10,
+      "lineWidth": 1,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "unit": "ms"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   }
+  }
+ ]
+}
