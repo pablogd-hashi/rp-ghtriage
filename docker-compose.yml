@@ -47,6 +47,10 @@ services:
         set -e
         rpk topic create pr.enriched pr.triaged pr.dlq \
           --brokers redpanda:9092 --partitions 1 --replicas 1 || true
+        # Consumer-group lag metrics are off by default. Without this the lag
+        # alert in monitoring/alerts.yml has no data.
+        rpk cluster config set enable_consumer_group_metrics '["group","partition","consumer_lag"]' \
+          -X admin.hosts=redpanda:9644
         echo "--- topics ---"
         rpk topic list --brokers redpanda:9092
     restart: "no"
@@ -239,6 +243,43 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    restart: unless-stopped
+
+  # ── Monitoring ──────────────────────────────────────────────────────────────
+  # Redpanda exposes Prometheus metrics natively on :9644. Prometheus scrapes it;
+  # Grafana reads Prometheus for broker health and Postgres for the application
+  # signals (label_source, latency), which are already columns in pr_triage.
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: prometheus
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: grafana
+    depends_on:
+      prometheus:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
     restart: unless-stopped
 
 volumes:

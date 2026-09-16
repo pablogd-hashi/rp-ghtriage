@@ -1,0 +1,33 @@
+groups:
+  - name: pr-triage
+    rules:
+      # The worker does ~39 PRs/hour, so 20 is half an hour of backlog. 5m of
+      # sustained lag rules out a one-poll burst that drains on its own.
+      #
+      # Lag is derived, not read from redpanda_kafka_consumer_group_lag_sum. That
+      # gauge reports 0 when the group has no live member, which is exactly the
+      # case where the worker is dead. The two raw gauges below survive an empty
+      # group, so this fires for a dead worker as well as a slow one. Verified by
+      # stopping the worker: lag_sum stayed 0 while the derived value read 26.
+      # Both gauges need enable_consumer_group_metrics on the cluster (set in topics-init).
+      - alert: TriageWorkerLagging
+        expr: |
+          max(redpanda_kafka_max_offset{redpanda_topic="pr.enriched"})
+            - (max(redpanda_kafka_consumer_group_committed_offset{redpanda_group="pr-triage-worker",redpanda_topic="pr.enriched"}) or vector(0))
+            > 20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pr-triage-worker is {{ $value }} messages behind"
+          description: "Model slower than Connect, or the worker is down or waiting for a model. Check: docker compose logs worker"
+
+      # Nothing consumes pr.dlq, so its high watermark is its depth. Alert on
+      # growth, not the absolute value, or it would page forever once non-zero.
+      - alert: TriageDLQGrowing
+        expr: increase(redpanda_kafka_max_offset{redpanda_topic="pr.dlq"}[15m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} new records on pr.dlq in the last 15m"
+          description: "Enrichment or the worker rejected records. Check: task consume -- pr.dlq"
