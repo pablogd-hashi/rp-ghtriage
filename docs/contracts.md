@@ -1,3 +1,9 @@
+---
+title: Contracts
+layout: default
+nav_order: 3
+---
+
 # Contracts
 
 The shapes each stage promises the next one. Code is written against this document,

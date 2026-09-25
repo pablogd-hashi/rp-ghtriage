@@ -1,3 +1,9 @@
+---
+title: Architecture
+layout: default
+nav_order: 2
+---
+
 # How this works
 
 This system watches for new pull requests on GitHub, reads the actual code that changed,
