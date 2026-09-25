@@ -4,6 +4,8 @@ Watches new pull requests on the GitHub public firehose, fetches the code that a
 changed, and sorts each one using LLM into different buckets`security`, `feature`, `refactor`, `docs` or
 `dependency-bump`. In addition, it will add a risk note a human review and act upon.
 
+Documentation site: **<https://pablogd-hashi.github.io/rp-ghtriage/>**
+
 ## Why this source
 
 The GitHub events feed hands you this for a new pull request:
