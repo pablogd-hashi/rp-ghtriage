@@ -1,0 +1,37 @@
+// Redpanda-flavoured scheme for just-the-docs.
+//
+// Built on the theme's light scheme, swapping its default purple accents for the
+// red sampled from docs.redpanda.com (#c1331a). That red on white measures 5.6:1,
+// which clears WCAG AA for body text, so links stay readable rather than merely
+// on-brand.
+//
+// Only accent variables are overridden. Everything else is inherited from the
+// theme, so this keeps working when just-the-docs updates.
+
+$color-scheme: light;
+
+$rp-red: #c1331a;
+$rp-red-tint: #fdf3f1;
+
+// Links and the primary button. These are the theme's purple by default.
+$link-color: $rp-red;
+$btn-primary-color: $rp-red;
+
+// Sidebar: a very pale red wash instead of grey, so the nav reads as part of the
+// same palette rather than a separate chrome.
+$sidebar-color: $rp-red-tint;
+$feedback-color: darken($sidebar-color, 3%);
+
+// Headings stay near-black. Red headings on top of red links is too much, and it
+// costs contrast on the thing people actually read.
+$body-heading-color: $grey-dk-300;
+$body-text-color: $grey-dk-100;
+$nav-child-link-color: $grey-dk-100;
+
+$body-background-color: $white;
+$code-background-color: $grey-lt-000;
+$table-background-color: $white;
+$search-background-color: $white;
+$search-result-preview-color: $grey-dk-100;
+
+@import "./vendor/accessible-pygments/github-light";

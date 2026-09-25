@@ -20,6 +20,9 @@ aux_links_new_tab: true
 heading_anchors: true
 search_enabled: true
 
+# Custom scheme in _sass/color_schemes/redpanda.scss.
+color_scheme: redpanda
+
 # Defence in depth. These four are gitignored, so they never reach the remote and
 # Pages never sees them. If that ever slips, the site still will not publish them.
 exclude:
