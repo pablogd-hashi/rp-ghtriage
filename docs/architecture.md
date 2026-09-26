@@ -1,19 +1,18 @@
 ---
 title: Architecture
 layout: default
-nav_order: 2
+nav_order: 3
 ---
 
 # How this works
 
 This system watches for new pull requests on GitHub, reads the actual code that changed,
 and sorts each one into a category (security, feature, refactor, docs or dependency
-bump), adding a short risk note that a human can act upon. All of it lands on a web page.
+bump), adding on top of that a short risk note a human can act upon.
 
-This document walks through every part of it, and for each one it covers what it is, what
-it does here, where the code lives, why it's there in the first place and what would make
-it better. You don't need to know Kafka or Docker to follow it, as any word that needs
-explaining is explained the first time it comes up.
+Every section below covers one component, and for each of them the decision I made, the
+alternative I didn't take, and the condition that would make me flip. The code links go
+straight to the file on GitHub.
 
 ## The picture
 
@@ -35,154 +34,92 @@ flowchart TB
     db --> web
 ```
 
-Reading it top to bottom, GitHub publishes everything that happens, Connect throws most
-of it away and fetches the code for whatever is left, and the queue holds those results
-until the worker is ready for them. The worker then asks the model what kind of change it
-is and writes the answer down, and the web page shows it. The rest of this document is
-one section per box.
+GitHub publishes everything that happens, Connect throws most of it away and fetches the
+code for whatever is left, and the queue holds those results until the worker is ready.
+The worker asks the model what kind of change it is and writes the answer down, and the
+web page shows it.
 
 ---
 
 ## 1. GitHub's public feed
 
-**What it is.** GitHub publishes a public list of everything happening on the site right
-now, which includes every push, every comment, every star and every pull request on every
-public repository. It sits at `https://api.github.com/events`, needs no login, and gives
-you roughly 100 items per request.
+The feed at `https://api.github.com/events` is a public list of everything happening on
+GitHub right now, giving you roughly 100 items per request with no login needed, and it's
+the only source of data here.
 
-**What it does here.** It's the only source of data, so nothing else comes in.
+**The decision: polling a public feed rather than webhooks.** For a new pull request the
+feed hands you five fields, `id`, `number`, `url`, `base` and `head`, and nothing else, so
+the pipeline polls once a minute and fetches everything else itself. I measured this over
+52 pull request events and every single one had exactly those five keys.
 
-**Where the code is.** The address and the polling frequency are at the top of
-[connect/ingest.yaml](../connect/ingest.yaml), lines 11 to 30.
+**Why it matters.** It costs one request a minute whether anything happened or not, and
+since the feed is a moving window of recent events, anything that happened while the
+pipeline was down is simply gone. There's no replay, which for a compliance tool is the
+uncomfortable part.
 
-**Why it's there.** The exercise needed a public data source, and this one has a property
-that ended up shaping the whole design, which is that when a new pull request appears in
-the feed GitHub gives you almost nothing about it. Exactly five fields:
+**When I'd flip it.** For any real deployment, straight away. Webhooks push each event as
+it happens, which removes both the wasted requests and the gap during downtime. The only
+reason this polls is that webhooks need a public endpoint and a repository you control,
+while the exercise asked for a public source with no signup.
 
-```
-id, number, url, base, head
-```
+**Cheaper than flipping**, and worth doing either way: GitHub returns an `ETag` with each
+response, and sending it back as `If-None-Match` means an unchanged feed replies "nothing
+new" without counting against the hourly limit.
 
-No title, no description and no code, just a number and a link. Which means a simple rule
-can't sort these at all, due to there being nothing to sort on, so the pipeline has to go
-and fetch the title and the code before it can do anything useful. That fetching is the
-actual job here rather than an extra step on top.
-
-I measured this over 52 pull request events and every single one had exactly those five
-keys, and the note is in [NOTES.md](../NOTES.md).
-
-**What would make it better.** Two things.
-
-- GitHub returns a tag with each response called an `ETag`, and if you send it back on
-  the next request and nothing has changed, GitHub replies "nothing new" without counting
-  it against your hourly limit. The pipeline doesn't do this yet, so every minute costs
-  one request whether anything actually happened or not.
-- The feed is a moving window of recent events, which means that if the pipeline is down
-  for a while, the events from that period are simply gone. For a real deployment I'd use
-  GitHub's webhooks, which push each event to you as it happens, rather than polling a
-  public list.
+[connect/ingest.yaml](https://github.com/pablogd-hashi/rp-ghtriage/blob/main/connect/ingest.yaml#L11),
+lines 11 to 30.
 
 ---
 
 ## 2. Redpanda Connect
 
-**What it is.** A program that moves and reshapes data, and you don't write code for it.
-Instead you write a settings file saying get this, throw away that, fetch this extra
-thing and send the result over there, and Connect reads the file and does it.
-
-**What it does here.** Everything between GitHub and the queue, in this order:
-
-1. **Asks GitHub for the latest 100 events**, once a minute. That interval isn't a guess,
-   as GitHub sends a header telling you the rate it wants.
-2. **Throws away everything that isn't a new pull request.** Most of the feed is people
-   pushing code, commenting or starring things, so only pull request events with the
-   action "opened" survive this step.
-3. **Throws away pull requests opened by bots**, as in Dependabot, Renovate or anything
-   ending in `[bot]`, because they open enormous numbers of them and there's nothing to
-   learn from reading them.
-4. **Remembers what it has already seen**, so the same pull request isn't processed again
-   when it shows up in the next minute's list. That memory lives in RAM and lasts two
-   hours.
-5. **Fetches the pull request itself** from GitHub, which is where the title, the
-   description, the author and the file count come from.
-6. **Fetches the list of changed files**, with the actual code changes in each of them.
-7. **Trims it down**, keeping at most 8 files, cutting each file's changes to 1,500
-   characters and the description to 2,000, so that one enormous pull request can't end
-   up costing a fortune further down the line.
-8. **Sends the result to the queue.** If both fetches failed and there's no title and no
-   files, it goes to a separate "dead letter" lane instead, so it can be counted and
-   looked at later.
+Connect is configured with a settings file rather than code, and here it does everything
+between GitHub and the queue: poll, drop what isn't a new pull request, drop the bots,
+remember what it has already seen, fetch the pull request and its changed files, trim the
+result and route it.
 
 Measured over 220 real events, 44 were pull request events, 20 of those were new ones
 (the rest being merges and label changes), 2 were bots, and 18 survived. That's roughly
-92% thrown away before any fetching or thinking happens at all.
+92% thrown away before any fetching or thinking happens.
 
-**Where the code is.** All of it sits in [connect/ingest.yaml](../connect/ingest.yaml),
-commented step by step. The two fetches are the `branch:` blocks at lines 78 and 101, the
-trimming is the big `mapping:` block at line 126, and the routing decision is `output:`
-at line 155.
+**The decision: enrichment in the Connect config rather than in the Python worker.** The
+fetching and reshaping sits in the config, which means the queue holds records that are
+already useful to anyone reading them rather than only to this one worker, and the worker
+never spends a GitHub request itself.
 
-**Why it's there.** Fetching and reshaping is what Connect is genuinely good at, so
-that's where it went. Putting it here means the queue holds records that are already
-useful to anyone reading them rather than just to this one worker, and it also means the
-worker never spends a GitHub request itself.
+**Why it matters.** It hides its own failures. If GitHub times out on the file fetch, the
+record keeps flowing with a title but no code, because the dead-letter check only catches
+the case where the title *and* the files are both missing. So a pull request with a title
+and no code gets through, and the model ends up judging a security change on a title
+alone, which is exactly the thing this system exists to avoid.
 
-**What would make it better.**
+**When I'd flip it.** If silent enrichment failures turned out to be common rather than
+rare, or in any environment sensitive enough that they can't be tolerated. In the Python
+worker I'd catch the HTTP timeout, retry with cleaner error handling and mark the record
+as failed explicitly, rather than inferring failure from fields that happen to be empty.
 
-- **When a fetch fails, nothing notices.** If GitHub times out on the file fetch, the
-  record keeps flowing with a title but no code, because the dead-letter check at line
-  165 only catches the case where the title *and* the files are both missing. So a pull
-  request with a title and no code gets through and the model ends up being asked to
-  judge it on the title alone. Connect actually knows the fetch failed, as it sets a
-  flag, so the fix is to check that flag instead of checking whether fields happen to be
-  empty.
-- **The memory of what it has seen dies with the container.** Restart Connect and it
-  forgets everything, then re-fetches whatever is still inside GitHub's window, and two
-  copies of Connect would each spend the same requests on the same events. The fix here
-  is a shared memory such as Redis.
-- **The first 8 files aren't necessarily the important 8.** They're whatever order GitHub
-  happened to return them in, so a pull request changing nine files, where the ninth is
-  the one touching authentication, simply loses that file. The fix is to sort by likely
-  risk before cutting, so files with `auth`, `cors`, `secret` or `crypto` in the path go
-  first and documentation or lockfiles go last.
+**Cheaper than flipping.** Connect already knows the fetch failed, as it sets an error
+flag, so switching the output on `errored()` instead of on empty fields fixes the same
+problem without moving anything.
 
----
+Two more things worth knowing. The memory of what it has seen lives in RAM and dies with
+the container, so a restart re-fetches whatever is still inside GitHub's window, and two
+copies of Connect would each spend the same requests on the same events. And the trim
+keeps the first 8 files in whatever order GitHub returned them, so a pull request
+changing nine files where the ninth touches authentication simply loses that file, which
+a risk-weighted sort before cutting would fix.
 
-## 3. Redpanda, the queue
-
-**What it is.** A place to put things so another program can pick them up later, where
-items go in one end and come out the other in order, and if the program picking them up
-crashes the items are still there when it comes back. Think of a conveyor belt that
-doesn't drop anything.
-
-**What it does here.** It sits between Connect and the worker, so Connect puts enriched
-pull requests on it and the worker takes them off one at a time.
-
-**Where the code is.** It's a stock image, started in
-[docker-compose.yml](../docker-compose.yml) at line 10, and the three lanes are created
-by the `topics-init` block at line 38.
-
-**Why it's there.** Connect can fetch pull requests far faster than the model can think
-about them, and measured, the model takes roughly 90 seconds per pull request, so a
-single worker gets through about 39 an hour. Without a queue in the middle you'd end up
-with one of two bad outcomes: either Connect waits for the model and falls behind GitHub,
-missing events entirely, or Connect runs ahead and the worker drops whatever it couldn't
-keep up with. The queue absorbs that difference, so Connect runs at GitHub's pace, the
-worker runs at the model's pace, and neither one blocks the other.
-
-It also means an outage becomes a delay rather than a loss, because if the worker dies
-the work simply waits.
-
-**What would make it better.** Right now there's one worker reading the queue, and when
-the queue grows faster than it drains the answer is more workers. The lane is set up with
-one partition (one ordered stream), so adding workers would mean adding partitions for
-each worker to take a share, which is a config change rather than a code change.
+[connect/ingest.yaml](https://github.com/pablogd-hashi/rp-ghtriage/blob/main/connect/ingest.yaml):
+the fetches are the `branch:` blocks at lines 78 and 101, the trim is the `mapping:` at
+126, the routing is `output:` at 155.
 
 ---
 
-## 4. The three lanes
+## 3. Redpanda, the queue and its three lanes
 
-Redpanda calls these "topics", and they're named lanes on the queue. There are three:
+The queue sits between Connect and the worker, so Connect puts enriched pull requests on
+it and the worker takes them off one at a time. There are three lanes, which Redpanda
+calls topics:
 
 | Lane | What goes on it | Who reads it |
 |---|---|---|
@@ -190,101 +127,84 @@ Redpanda calls these "topics", and they're named lanes on the queue. There are t
 | `pr.triaged` | Pull requests with their judgement attached | Nothing yet. It exists so something could |
 | `pr.dlq` | Things that failed. "Dead letter queue" | Nothing. A human, with `task consume -- pr.dlq` |
 
-**Where the code is.** Created at [docker-compose.yml:48](../docker-compose.yml#L48).
-Connect writes to the first and third at [connect/ingest.yaml:155](../connect/ingest.yaml#L155),
-and the worker reads the first and writes the second and third, at
-[worker.py:55](../worker.py#L55), [107](../worker.py#L107) and [117](../worker.py#L117).
+**The decision: a log between the fetcher and the worker rather than calling the worker
+directly.** Connect fetches far faster than the model can think, as the model takes
+roughly 90 seconds per pull request so one worker gets through about 39 an hour, and the
+queue absorbs that difference.
 
-**Why three.** Separating "ready to judge" from "judged" means those judged results are
-available to any future system without it needing to re-run the model, and separating
-failures into their own lane means you can count them and inspect them without them
-clogging up the main path.
+**Why it matters.** Without it you get one of two bad outcomes: either Connect waits for
+the model and falls behind GitHub, missing events entirely, or Connect runs ahead and the
+worker drops whatever it couldn't keep up with. With the queue in place an outage becomes
+a delay rather than a loss, because if the worker dies the work simply waits, and that's
+the entire reason a broker is here at all.
 
-**What would make it better.** `pr.triaged` currently has no reader, so the natural next
-step is a small program that reads it and sends anything labelled `security` to a Slack
-channel or a review queue. The lane is already there precisely so that program is a day's
-work rather than a rebuild.
+**When I'd flip it.** At a volume low enough that a cron job and a database table would
+do, the broker is overhead. That isn't this: the mismatch between fetch speed and model
+speed is roughly ten to one, and it's measurable.
 
----
+**Scaling it.** One worker reads the queue today, and when the queue grows faster than it
+drains the answer is more workers. The lane has one partition, so that means adding
+partitions for each worker to take a share, which is a config change rather than a code
+change.
 
-## 5. Ollama, the model
-
-**What it is.** The AI. Ollama is a program that runs language models on your own machine
-for free and with no account, and the model used here is `qwen2.5:3b`, a small one that
-fits on a laptop.
-
-**What it does here.** It answers two questions per pull request. The first one is what
-kind of change this is and how sure it is about that, and the second, only if the first
-answer came back confident, is which part of the system this touches and what could
-break.
-
-**Where the code is.** Both questions are written out in full in
-[triage/prompts.py](../triage/prompts.py), the code that sends them is
-[triage/llm.py](../triage/llm.py), and the model itself is started in
-[docker-compose.yml:123](../docker-compose.yml#L123) and downloaded by the block at line
-139.
-
-**Why it's there.** Somebody has to read the code and decide what it is, and a rule
-simply can't do that, due to the title saying "bump deps" while the code turns off a
-security check. Only reading the change actually tells you, which is a judgement, and the
-model is what makes it.
-
-The reason it's a small local model rather than a hosted one is so anyone can run this
-with `docker compose up` and no API keys at all, and a hosted model can be switched on
-with a single line in `.env`.
-
-**What would make it better.** This is where the biggest weakness lives and it's worth
-being blunt about it.
-
-The recorded results in [fixtures/triaged.json](../fixtures/triaged.json) score 9 out of
-12, and the three misses are all pull requests written to mislead: a title saying "bump
-deps" while the code disables token expiry, "small cleanup" while the code fixes SQL
-injection, and "fix typo" while the code opens a security setting to the whole internet.
-The model went with the title on all three occasions, at 80 to 90 percent confidence.
-
-Here's the part that really stings. On all three of them the model's *second* answer, the
-"what could break" note, correctly named the problem, so the note for "fix typo" says the
-change may expose the gateway to any origin while the label sitting above it says
-`refactor`. In other words, the model actually saw it, but the loop only uses the first
-answer to decide the label, so the second answer's finding went into a text column and
-changed absolutely nothing.
-
-The fix isn't a better prompt. It's a rule that runs before the model and can only raise
-the alarm, never lower it, so if the path contains `auth`, `cors`, `middleware` or
-`secret`, or the code contains `verify_exp: False` or `allowed_origins: "*"`, the label
-becomes `security` and the model's job narrows down to explaining why. Rules are good at
-floors and models are good at explanations, and this design currently has them the wrong
-way round for the one category that matters most.
+Created at
+[docker-compose.yml](https://github.com/pablogd-hashi/rp-ghtriage/blob/main/docker-compose.yml#L48).
 
 ---
 
-## 6. The worker
+## 4. Ollama, the model
 
-**What it is.** A Python program of about 140 lines that reads from the queue, decides
-what to do with each pull request and writes the result down. This is the part the
-exercise was really about, and it's the one to read if you only read a single file.
+Ollama runs language models on your own machine for free with no account, and the model
+here is `qwen2.5:3b`. It answers two questions per pull request: what kind of change this
+is and how sure it is, then, only if the first answer came back confident, which part of
+the system this touches and what could break.
 
-**What it does here.** For each pull request, in order:
+**The decision: a small local model by default, with a hosted one behind an env var.**
+Anyone can run this with `docker compose up` and no API keys at all, and a hosted model
+is one line in `.env`.
 
-1. **Checks whether to bother at all.** A draft pull request, or one with no files, or
-   one with no readable content, gets written down as "skipped" without asking the model,
-   because asking would cost time and return a guess based on the repository name.
-2. **Asks the model the first question**, passing the title, description, filenames and
-   code changes, and gets back a category plus a confidence score between 0 and 1.
-3. **Cleans up the answer**, as small models are messy and will wrap the answer in chat,
-   add stray commas, or say "Security Fix" when you asked for "security". Section 7
-   covers this in detail.
-4. **Decides whether to trust it.** If the model's confidence is below 0.65, or the
-   answer couldn't be read at all, it asks again with a stricter version of the question,
-   and if that also fails or the model is still unsure it writes "unclear" and records
-   why. The worker never guesses.
-5. **Asks the second question**, but only when the first answer was trusted, covering
-   which part of the system this touches and what could break. This one only sees the
-   files the model named as evidence, so it stays short.
-6. **Writes the row** to the database, puts a copy on the `pr.triaged` lane, and only
-   then tells the queue it's done with this one.
+**Why it matters.** It's the biggest weakness in the whole system and it's worth being
+blunt. The recorded results score 9 out of 12, and the three misses are all pull requests
+written to mislead: "bump deps" while the code disables token expiry, "small cleanup"
+while it fixes SQL injection, "fix typo" while it opens a security setting to the whole
+internet. The model went with the title all three times, at 80 to 90 percent confidence.
 
-Every row records which of those paths it took, in a column called `label_source`:
+The part that really stings is that on all three the model's *second* answer, the "what
+could break" note, correctly named the problem. The note for "fix typo" says the change
+may expose the gateway to any origin, while the label above it says `refactor`. In other
+words the model saw it, but only the first answer decides the label, so the finding
+landed in a text column and changed nothing.
+
+**When I'd flip it.** For a customer, immediately, with the hosted model as the default
+and the local one as the fallback. A 3B model on a laptop is the right choice for a demo
+anyone can run and the wrong choice for anything that matters.
+
+**Cheaper than flipping, and better.** The fix isn't a bigger model, it's a rule that
+runs before the model and can only raise the alarm, never lower it. If the path contains
+`auth`, `cors`, `middleware` or `secret`, or the code contains `verify_exp: False` or
+`allowed_origins: "*"`, the label becomes `security` and the model's job narrows to
+explaining why. Rules are good at floors and models are good at explanations, and this
+design currently has them the wrong way round for the one category that matters most.
+
+Prompts in
+[triage/prompts.py](https://github.com/pablogd-hashi/rp-ghtriage/blob/main/triage/prompts.py),
+client in
+[triage/llm.py](https://github.com/pablogd-hashi/rp-ghtriage/blob/main/triage/llm.py).
+
+---
+
+## 5. The worker
+
+About 140 lines of Python that read from the queue, decide what to do with each pull
+request and write the result down. This is the part worth reading if you only read one
+file.
+
+For each pull request it checks whether it's worth asking at all, asks the model the
+first question, cleans up the answer, decides whether to trust it, asks the second
+question only if it does, then writes the row and only afterwards tells the queue it's
+done.
+
+Every row records which of those paths it took:
 
 | `label_source` | What happened |
 |---|---|
@@ -292,14 +212,6 @@ Every row records which of those paths it took, in a column called `label_source
 | `model_retry` | First answer was unusable or unsure. The stricter retry worked |
 | `fallback` | Both attempts failed. Wrote "unclear" rather than guessing |
 | `skipped` | Never asked the model. Draft, or nothing to read |
-
-That column is shown on the web page, so when a row looks wrong it tells you which path
-produced it without anyone needing to go and read logs.
-
-**Where the code is.** The loop that reads the queue is [worker.py](../worker.py), and
-the decision steps above are [triage/reason.py](../triage/reason.py), which is written to
-be read top to bottom and has the three places a change would land marked `SEAM 1`,
-`SEAM 2` and `SEAM 3`.
 
 ```mermaid
 flowchart TB
@@ -316,193 +228,159 @@ flowchart TB
     q2 --> done[write: category, note, model or model_retry]
 ```
 
-**Why it's built this way.** Three decisions, each one with a reason behind it.
+**The decision: a multi-step loop rather than one comprehensive prompt.** A first call
+classifies and scores confidence, a gate decides whether to trust it, a stricter retry
+runs when it doesn't, and a second narrower call produces the risk note using only the
+files the first call named as evidence.
 
-*Two questions instead of one.* The second question, the one about what could break, only
-really makes sense if the label is right in the first place, because attaching a
-confident-sounding risk note to a wrong label is worse than having no note at all, as
-someone will skim the note and believe the label. So the second question only runs once
-the first answer has been trusted.
+**Why it matters.** The second question only makes sense if the label is right, because
+attaching a confident-sounding risk note to a wrong label is worse than having no note at
+all, as someone will skim the note and believe the label. Splitting them also keeps each
+prompt small, which matters a great deal for a 3B model.
 
-*The worker waits for the model instead of working without it.* An earlier version
-consumed pull requests even when the model was down, wrote "unclear" for each of them and
-marked them done, which permanently lost them, due to GitHub not sending the same event
-twice, so nothing would ever come back to reclassify them. Now the worker checks it can
-reach the model before reading anything, and if it can't it waits and says so once a
-minute, leaving the pull requests sitting on the queue. See
-[worker.py:56](../worker.py#L56).
+**When I'd flip it.** Moving from a local model to a capable hosted one. Large hosted
+models follow a JSON schema reliably enough that the retry path becomes dead code, and at
+that point the network round-trip dominates, so one comprehensive call is both faster and
+cheaper.
 
-*It marks a message done only after the database write.* If the worker crashes halfway
-through, the message gets delivered again when it restarts, and doing a pull request
-twice is perfectly safe because the database write replaces the old row rather than
-adding a second one. Losing a pull request is the thing that isn't safe. See
-[worker.py:49](../worker.py#L49).
+**The confidence gate is doing less than it looks.** In practice this model reports 0.85
+or higher on almost everything, including the answers it gets wrong, so the gate at 0.65
+almost never fires and the retry is triggered by unreadable answers rather than by
+uncertainty. A better signal would be something the model can't inflate, as in whether
+the files it names as evidence actually exist in the diff.
 
-**What would make it better.**
+**Two decisions that aren't tradeoffs, just correctness.** The worker waits for the model
+before consuming anything, because an earlier version consumed while the model was down,
+wrote "unclear" and marked them done, which permanently lost those pull requests as
+GitHub doesn't re-emit the event. And it marks a message done only after the database
+write, so a crash halfway through means redelivery rather than loss.
 
-- **A database outage does completely the wrong thing.** If Postgres goes away mid-run,
-  every pull request after that fails at the write step, gets sent to the dead-letter
-  lane and gets marked done, so when Postgres comes back the worker is left with a dead
-  connection and an empty queue. The code currently treats "the database is down" exactly
-  the same as "this message is broken", when they need different handling: a broken
-  message should be parked, while a down database should make the worker wait and
-  reconnect. This is [worker.py:100](../worker.py#L100) to 130.
-- **A pull request that got "unclear" because the model was slow never gets another
-  chance**, as the row is already marked done. The fix is a small job finding `fallback`
-  rows older than a few minutes and putting them back through, though it depends on the
-  database fix in section 8 landing first, otherwise a retry during an outage could
-  overwrite a good answer with a bad one.
-- **The confidence score isn't really doing much.** In practice this model reports 0.85
-  or higher on almost everything, including the answers it gets wrong, so the gate at
-  0.65 almost never fires and the retry path ends up being triggered by unreadable
-  answers rather than by the model saying it's unsure. A better signal would be something
-  the model can't inflate, as in whether the files it names as evidence actually exist in
-  the diff.
+**Where it breaks.** A database outage does completely the wrong thing. Every pull request
+after it fails at the write step, goes to the dead-letter lane and gets marked done, so
+when Postgres comes back the worker has a dead connection and an empty queue. The code
+treats "the database is down" identically to "this message is broken", when a broken
+message should be parked and a down dependency should make the worker wait and reconnect.
+
+[worker.py](https://github.com/pablogd-hashi/rp-ghtriage/blob/main/worker.py),
+[triage/reason.py](https://github.com/pablogd-hashi/rp-ghtriage/blob/main/triage/reason.py)
+(marked `SEAM 1`, `SEAM 2` and `SEAM 3`).
 
 ---
 
-## 7. Cleaning up the model's answer
+## 6. Cleaning up the model's answer
 
-**What it is.** Sixty lines in [triage/parse.py](../triage/parse.py) that turn whatever
-the model said into something the code can actually use. This is the riskiest code in the
-project, due to it being the one place where free text from an AI becomes structured data
-that gets stored.
+Sixty lines that turn whatever the model said into something the code can use, which
+makes it the riskiest code in the project, due to being the one place where free text
+from an AI becomes structured data that gets stored.
 
-**What it does here.** Four steps:
+**The decision: parse and validate in Python rather than in the Connect config.** Connect
+could strip a fence and pull out the first `{...}` block perfectly well, but a bad answer
+has to trigger a *different question*, and that's the thing a config can't express.
 
-1. If the answer is wrapped in a markdown code fence, it takes the inside.
-2. It finds the first `{ ... }` block by counting braces while tracking whether it's
-   inside a quoted string, because a regular expression can't do this correctly, as a
-   brace inside a string value would confuse it.
-3. It fixes formatting damage, meaning curly quotes and trailing commas.
-4. It checks the category is one of the five allowed ones, lowercasing it, stripping
-   spaces and mapping known variations like "dependency bump" to "dependency-bump".
+**Why it matters.** The rule the file follows is fix formatting, never fix meaning. A
+trailing comma is formatting, whereas turning "banana" into "unclear" would be inventing a
+judgement the model never made, so the code refuses the answer and the worker asks again.
+That's also why "unclear" is off-limits to the model and reserved for the worker to write
+when it gives up, which means an unclear row always says the pipeline couldn't decide
+rather than the model shrugged and we accepted it.
 
-**The rule it follows.** Fix formatting, never fix meaning. A trailing comma is
-formatting, whereas turning "banana" into "unclear" would be inventing a judgement the
-model never made, so instead the code refuses the answer and the worker asks again.
+**When I'd flip it.** If the model were reliable enough that a default label on bad output
+were acceptable and no retry were needed, the whole thing collapses into a Bloblang
+mapping and belongs upstream.
 
-**Why "unclear" is off-limits to the model.** The model can only choose from the five
-real categories, and "unclear" is reserved for the worker to write when it gives up. That
-way "unclear" always means the pipeline couldn't decide, and never means the model
-shrugged and we quietly accepted it. Combined with the `label_source` column, it makes
-every unclear row explainable.
+**Two repairs that can misfire.** The trailing-comma fix removes any comma before a
+closing brace including one inside a quoted string, which is a value change and the one
+thing this file promises not to do. And the curly-quote fix can end a string early and
+break an answer that was fine, costing a whole extra model call. Both go away by trying
+`json.loads` first and only repairing on failure.
 
-**Where the code is.** All of it in [triage/parse.py](../triage/parse.py), and the tests
-are in [tests/test_parse.py](../tests/test_parse.py), covering the shapes a small model
-actually produces, as in chatty preambles, fences, braces inside strings, cut-off output,
-trailing commas and labels that aren't on the list.
-
-**What would make it better.** Two of the repairs can misfire.
-
-- The trailing-comma fix removes any comma followed by a closing brace, including one
-  sitting inside a quoted string, so a rationale like "fixes the list, ]" loses its comma.
-  That's a value change, which is the one thing this file promises never to do.
-- The curly-quote fix turns `“` into `"` including inside a string, which then ends the
-  string early and breaks answers that were perfectly fine to begin with, and the cost of
-  that is an unnecessary retry, meaning a whole extra model call.
-
-The fix for both is the same, which is to try reading the answer as-is first and only run
-the repairs if that fails, so the repairs only ever touch answers that were already
-broken.
-
-One more thing: a confidence of `1.5`, which a model can produce when it half-follows the
-"between 0 and 1" instruction, gets treated as a percentage and stored as `0.015`, when
-it should be rejected like any other out-of-range number.
+[triage/parse.py](https://github.com/pablogd-hashi/rp-ghtriage/blob/main/triage/parse.py),
+tested in
+[tests/test_parse.py](https://github.com/pablogd-hashi/rp-ghtriage/blob/main/tests/test_parse.py).
 
 ---
 
-## 8. Postgres, the database
+## 7. Postgres
 
-**What it is.** A database, with one table and one row per pull request.
+One table, one row per pull request, written by a single statement, and read by the web
+page.
 
-**What it does here.** It stores the result, and the web page reads from it.
+**The decision: the worker writes to Postgres directly rather than Connect sinking a
+topic.** The worker owns the write, and it commits the queue offset only afterwards.
 
-**Where the code is.** The table definition is [db/schema.sql](../db/schema.sql), and the
-write is a single statement in [triage/store.py](../triage/store.py) at line 26.
+**Why it matters.** Two reasons. The `label_source` and the reason behind a fallback have
+to land atomically with the decision that produced them, and routing through a topic and
+a sink adds a hop where that provenance gets separated from its judgement. And it keeps
+credentials in one place, since Connect only ever needs a GitHub token.
 
-**Why it's built this way.** The write is an "upsert", meaning that if a row for this
-pull request already exists it gets replaced, and otherwise it gets inserted. That's
-deliberate, due to the same pull request legitimately arriving more than once: GitHub's
-feed overlaps from one minute to the next, Connect's memory dies on restart, and a worker
-crash replays the message. Every one of those would cause either a crash or a duplicate
-if the write were a plain insert.
+**When I'd flip it.** If several systems needed the results rather than one web page, a
+topic plus a Connect sink starts paying for itself.
 
-**What would make it better.** The upsert always lets the newest write win, which is
-right when a good answer replaces a bad one, but wrong the other way round, as in when
-the model is down and a pull request gets re-run, so "unclear" replaces the correct answer
-that was already sitting there. The comment in [store.py:19](../triage/store.py#L19) says
-exactly this and says what the fix is, which is a `WHERE` clause on the upsert:
+**The write is an upsert, and that cuts both ways.** The same pull request legitimately
+arrives more than once, as the feed overlaps minute to minute, Connect's memory dies on
+restart and a worker crash replays the message, so a plain insert would either crash or
+duplicate. But letting the newest write always win is wrong in the other direction: if the
+model is down and a pull request gets re-run, "unclear" replaces the correct answer that
+was already there. The fix is a `WHERE` clause:
 
 ```sql
 WHERE EXCLUDED.label_source IN ('model', 'model_retry')
    OR pr_triage.label_source IN ('fallback', 'skipped')
 ```
 
-Which reads as a real answer being able to replace anything, while a gave-up can only
-ever replace another gave-up. That isn't written yet, and it's the first thing I would
-add, because the retry job in section 6 is unsafe without it.
+A real answer can replace anything, a gave-up can only replace another gave-up. That
+isn't written yet, and it's the first thing I would add, because the retry job in section
+5 is unsafe without it.
+
+[db/schema.sql](https://github.com/pablogd-hashi/rp-ghtriage/blob/main/db/schema.sql),
+[triage/store.py](https://github.com/pablogd-hashi/rp-ghtriage/blob/main/triage/store.py#L26).
 
 ---
 
-## 9. The web page
+## 8. The web page and the seed
 
-**What it is.** A single page at `localhost:8000` showing the table newest first with a
-filter by category, plus a JSON version at `/api/results`.
+A single page at `localhost:8000` showing the table newest first with a filter by
+category, plus a JSON version at `/api/results`. A small program also runs once at
+startup and puts twelve already-classified pull requests into the database.
 
-**Where the code is.** [web.py](../web.py). It's one file, the HTML is built as a string
-inside it, and there's no template engine and no JavaScript framework.
+**The decision: serve it from the database rather than from the topic.** The web layer
+reads rows, it doesn't consume or reason, so the reasoning service is a worker rather than
+something the page invokes.
 
-**Why it's that simple.** The exercise asked for somewhere we can see it, and a plain
-table you can read in one sitting beats a dashboard that needs a build step.
+**Why it matters.** The page stays responsive regardless of how slow the model is, and
+long-term storage comes for free, so you can look at how classifications changed over
+time. The seed exists because new pull requests are roughly 2 in every 100 events and the
+model takes 90 seconds each, which would leave `docker compose up` showing an empty table
+for several minutes. The rows are a recording of a real earlier run rather than anything
+invented, and every row's `model` column says so.
 
-**What would make it better.** There's no login at all, so anyone who can reach port 8000
-sees everything, and each page load opens its own database connection and closes it
-again. Both are fine on one laptop and not fine anywhere else.
+**When I'd flip it.** Never for this shape. Invoking the model synchronously from a page
+request would mean a 90-second page load.
 
----
+**What's wrong with it.** There's no login at all, so anyone reaching port 8000 sees
+everything, and each page load opens its own database connection. Both are fine on a
+laptop and not fine anywhere else.
 
-## 10. The seed
-
-**What it is.** A small program that runs once at startup and puts twelve
-already-classified pull requests into the database.
-
-**Where the code is.** [scripts/seed_offline.py](../scripts/seed_offline.py), started by
-the `seed` block in [docker-compose.yml:184](../docker-compose.yml#L184), and the twelve
-rows live in [fixtures/triaged.json](../fixtures/triaged.json).
-
-**Why it's there.** New pull requests are roughly 2 in every 100 events and the model
-takes 90 seconds each, so without this `docker compose up` would show an empty table for
-several minutes, whereas with it the page has rows the moment it opens. They're a
-recording of a real earlier run rather than anything invented, and every row's `model`
-column says so.
-
-**What would make it better.** The twelve fixtures were written by hand to make a point
-and the labels were written by the same hand, which is fine for a demo and not a real
-test. The next version should use real pull requests captured off the queue and labelled
-after the fact, and should report how many real security changes it misses, because
-that's the number that actually matters here.
+[web.py](https://github.com/pablogd-hashi/rp-ghtriage/blob/main/web.py),
+[scripts/seed_offline.py](https://github.com/pablogd-hashi/rp-ghtriage/blob/main/scripts/seed_offline.py).
 
 ---
 
-## 11. Docker Compose, the on switch
+## 9. Docker Compose
 
-**What it is.** One file that starts every part above in the right order.
-
-**Where the code is.** [docker-compose.yml](../docker-compose.yml), where each block is
-one part and each has a `depends_on` saying what has to be running or finished first.
-
-**Why the order matters.** The worker must not start before the queue has its lanes,
-before the database is accepting connections, or before the model has been downloaded,
-and the file encodes all of that. A reviewer runs one command and everything comes up in
-sequence, verified from an empty machine at roughly two and a half minutes.
+One file that starts every part above in the right order, using `depends_on` so the worker
+doesn't start before the queue has its lanes, before the database accepts connections, or
+before the model has been downloaded. Verified from an empty machine at roughly two and a
+half minutes.
 
 **One thing to know.** The model download is allowed to fail, so if it times out the
 block prints a warning and reports success anyway, letting the rest of the stack start.
 Which means the "worker waits for model download" dependency doesn't actually guarantee a
-model exists. What guarantees it is the worker's own check in section 6, where it asks
-the model a test question and waits until it gets an answer back. The compose file
-handles the order, while the worker handles the truth.
+model exists. What guarantees it is the worker's own check, where it asks the model a test
+question and waits until it gets an answer. The compose file handles the order, while the
+worker handles the truth.
+
+[docker-compose.yml](https://github.com/pablogd-hashi/rp-ghtriage/blob/main/docker-compose.yml).
 
 ---
 
@@ -516,38 +394,35 @@ Taking a real one from the recorded data, `acme/gateway` pull request 56, titled
 3. Connect fetches the title ("fix typo") and the description.
 4. Connect fetches the files, and there's one, `config/cors.yaml`, where the change sets
    `allowed_origins` to `"*"` and turns on `allow_credentials`.
-5. Connect trims it, though there's nothing to trim as it's small, and puts it on
-   `pr.enriched`.
+5. Connect puts it on `pr.enriched`.
 6. The worker picks it up. Not a draft, has a file, has content, so it proceeds.
-7. The worker asks the model question one, and the model says `refactor` at 0.80
-   confidence, with "Modifies configuration file without changing security or adding new
-   features."
+7. The model answers `refactor` at 0.80 confidence: "Modifies configuration file without
+   changing security or adding new features."
 8. 0.80 is above 0.65, so it's trusted, and the worker asks question two showing only
    `config/cors.yaml`.
-9. The model replies with affected area `security` and a note saying that introducing `*`
-   may expose the gateway to unauthorized access from any origin.
-10. The worker writes the row with category `refactor`, a note warning about security and
-    source `model`, then marks the message done.
+9. The model replies with affected area `security` and a note saying introducing `*` may
+   expose the gateway to unauthorized access from any origin.
+10. The worker writes the row: category `refactor`, a note warning about security, source
+    `model`.
 
-So the row on the web page says `refactor` while the note sitting next to it describes a
-security problem. The model saw it, and the design simply didn't use what it saw. That's
-the gap described in section 5, and it's the first thing worth fixing after the database
-guard.
+So the row says `refactor` while the note next to it describes a security problem. The
+model saw it, and the design didn't use what it saw. That's the gap in section 4, and the
+first thing worth fixing after the database guard.
 
 ---
 
 ## What I would do next, in order
 
-1. **The database guard** (section 8), because a worse answer must not be able to replace
+1. **The database guard** (section 7), because a worse answer must not be able to replace
    a better one, and nothing that re-runs a pull request is safe until this exists.
-2. **The retry job for "unclear" rows** (section 6), which with the guard in place is a
+2. **The retry job for "unclear" rows** (section 5), which with the guard in place is a
    query and a loop, and turns a model outage from data loss into a delay.
-3. **The security floor** (section 5), a rule that can only raise the alarm, running
+3. **The security floor** (section 4), a rule that can only raise the alarm, running
    before the model, and the only change that actually fixes the three confident misses.
-4. **Check the failure flag in Connect** (section 2), because until then a pull request
+4. **Routing on `errored()` in Connect** (section 2), because until then a pull request
    with a title and no code can still reach the model.
-5. **A real evaluation set** (section 10), using captured pull requests labelled
-   afterwards and reporting how many security changes were missed.
+5. **A real evaluation set**, using captured pull requests labelled afterwards and
+   reporting how many security changes were missed.
 
 The order is dependency. One and two are a pair, three changes what the worker does and
 should be measured by five, and four is small and independent of everything else.
