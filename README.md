@@ -217,7 +217,6 @@ GitHub /events ──▶ Connect ──▶ topic pr.enriched ──▶ worker �
 | `evals/` | The ablation |
 | `docs/contracts.md` | What each stage promises the next |
 | `docs/architecture.md` | Diagrams, decision log, known limitations |
-| `NOTES.md` | Build log of what broke and why |
 
 ## Monitoring
 

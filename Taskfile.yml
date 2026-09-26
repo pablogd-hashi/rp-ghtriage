@@ -59,7 +59,7 @@ tasks:
           {{.CONNECT_IMAGE}} run /cfg/{{.CLI_ARGS}}.yaml
 
   docs:sync:
-    desc: Regenerate the site pages that mirror README.md and NOTES.md
+    desc: Regenerate the site pages that mirror README.md
     cmds:
       - python3 scripts/sync_docs.py
 
