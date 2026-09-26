@@ -3,7 +3,6 @@
 Two pages on the documentation site show content whose home is somewhere else:
 
     README.md, from "## What surprised me" onwards  ->  docs/tradeoffs.md
-    NOTES.md                                        ->  docs/build-log.md
 
 The exercise asks for the write-up to live in the README, so it stays there and
 this copies it onto the site rather than moving it. Generating the copy instead
@@ -11,7 +10,7 @@ of maintaining one by hand is the whole point: two hand-kept copies of the same
 paragraphs drift, and docs/contracts.md already drifted from the code once by
 saying 2KB per patch where the config says 1,500 characters.
 
-Run it with `task docs:sync` after editing the README write-up or NOTES.md.
+Run it with `task docs:sync` after editing the README write-up.
 Nothing here edits the source files.
 """
 
@@ -55,34 +54,8 @@ def tradeoffs() -> bool:
     return write_page(ROOT / "docs/tradeoffs.md", front, "", body)
 
 
-def build_log() -> bool:
-    """NOTES.md, the running log of what broke."""
-    notes = (ROOT / "NOTES.md").read_text()
-
-    # Drop the H1 and the explanatory preamble; the page front matter replaces them.
-    marker = "---\n"
-    body = notes.split(marker, 1)[1] if marker in notes else notes
-
-    front = (
-        "---\n"
-        "title: Build log\n"
-        "layout: default\n"
-        "nav_order: 7\n"
-        "---\n"
-    )
-    intro = (
-        "# Build log\n\n"
-        "Two lines per breakage: what I expected, and what actually happened. Written as I\n"
-        "went rather than tidied up afterwards, which is the only reason it is worth\n"
-        "reading.\n\n"
-        "Source: [NOTES.md](https://github.com/pablogd-hashi/rp-ghtriage/blob/main/NOTES.md)."
-    )
-    return write_page(ROOT / "docs/build-log.md", front, intro, body)
-
-
 def main() -> int:
-    changed = [name for name, fn in (("docs/tradeoffs.md", tradeoffs),
-                                     ("docs/build-log.md", build_log)) if fn()]
+    changed = [name for name, fn in (("docs/tradeoffs.md", tradeoffs),) if fn()]
     if changed:
         print("regenerated: " + ", ".join(changed))
     else:
