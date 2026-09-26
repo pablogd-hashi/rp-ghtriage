@@ -6,12 +6,11 @@ nav_order: 1
 
 # PR Triage
 
-This system watches for new pull requests on GitHub, reads the actual code that
-changed, and sorts each one into a category: security, feature, refactor, docs, or
-dependency bump. It writes a short note about what could break. The results show up on
-a web page.
+This system watches for new pull requests on GitHub, reads the actual code that changed,
+and sorts each one into a category (security, feature, refactor, docs or dependency
+bump), adding a short risk note that a human can act upon. All of it lands on a web page.
 
-It runs with one command and needs no API keys.
+It runs with a single command and it doesn't need any API key.
 
 ```mermaid
 flowchart TB
@@ -33,34 +32,37 @@ flowchart TB
 
 ## The problem it solves
 
-A large organisation gets hundreds of pull requests a day and nobody can read them all.
-Most are routine. A few touch the login system or payments. Today those get spotted by
-luck.
+A large organisation generates hundreds of pull requests a day, and there's simply nobody
+who can read all of them. Mostly they are routine, but a few of them will touch the login
+system or the payment flow, and as of today those only get spotted by luck.
 
-A simple rule cannot find them, because **titles lie**. A pull request titled "bump
-deps" can disable a token expiry check. One titled "fix typo" can open a security
-setting to the whole internet. The title says what the author thought they did. Only
-the code says what they did.
+A simple rule can't find them either, due to titles being misleading. A pull request
+titled "bump deps" can perfectly disable a token expiry check, and one titled "fix typo"
+can open a security setting to the whole internet. In other words, the title tells you
+what the author thought they were doing, while only the code tells you what they actually
+did.
 
 ## Why this is not a trivial lookup
 
-GitHub's public feed gives you five fields for a new pull request:
+The reason being, GitHub's public feed gives you exactly five fields for a new pull
+request:
 
 ```
 id, number, url, base, head
 ```
 
-No title. No description. No code. There is nothing in the feed for a rule to match
-against, so the pipeline has to go and fetch the title and the code before it can judge
-anything. That fetching is the job, not an extra step.
+No title, no description and no code, which means there's nothing in the feed a rule
+could ever match against. So the pipeline has to go and fetch the title and the code by
+itself before it can judge anything at all, and that fetching is the actual job here
+rather than an extra step on top.
 
 ## Where to go next
 
 | Page | What is in it |
 |---|---|
-| [Architecture](architecture.html) | Every component, what it does, where its code is, and what would make it better |
+| [Architecture](architecture.html) | Every component, what it does, where its code lives, and what would make it better |
 | [Contracts](contracts.html) | The exact shapes each stage promises the next |
-| [Repository](https://github.com/pablogd-hashi/rp-ghtriage) | Source, and the README with run instructions |
+| [Repository](https://github.com/pablogd-hashi/rp-ghtriage) | Source, plus the README with the run instructions |
 
 ## Running it
 
@@ -72,8 +74,8 @@ docker compose up
 ```
 
 Then open <http://localhost:8000>. The first run downloads a model, so give it a few
-minutes. The table is filled on boot from recorded results, so it is not empty while you
-wait for a live pull request.
+minutes. The table is filled on boot from recorded results, which means it won't sit
+empty while you wait for a live pull request to show up.
 
 Full instructions, including the GitHub token and the monitoring stack, are in the
 [README](https://github.com/pablogd-hashi/rp-ghtriage#readme).

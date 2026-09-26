@@ -1,8 +1,8 @@
 # PR Triage
 
 Watches new pull requests on the GitHub public firehose, fetches the code that actually
-changed, and sorts each one using LLM into different buckets`security`, `feature`, `refactor`, `docs` or
-`dependency-bump`. In addition, it will add a risk note a human review and act upon.
+changed, and uses an LLM to sort each one into `security`, `feature`, `refactor`, `docs`
+or `dependency-bump`, adding on top of that a risk note a human can review and act upon.
 
 Documentation site: **<https://pablogd-hashi.github.io/rp-ghtriage/>**
 
@@ -14,15 +14,15 @@ The GitHub events feed hands you this for a new pull request:
 "pull_request": { "id": …, "number": 412, "url": "…", "base": {…}, "head": {…} }
 ```
 
-That object carries no title, no description and no diff, so there is nothing in the
-feed for a rule to match against. Everything the model reads is fetched by the pipeline
-in a second and third call, which makes the enrichment step load-bearing rather than an
-optimisation.
+That object carries no title, no description and no diff, which means there's nothing in
+the feed a rule could ever match against. Everything the model eventually reads is
+fetched by the pipeline in a second and a third call, and that's what makes the
+enrichment step load-bearing here rather than just an optimisation on top.
 
 ## Prerequisites
 
-**Docker with Compose v2.** That is the only hard requirement. Everything else runs
-inside containers, so there is no Python, Postgres or Ollama to install locally.
+**Docker with Compose v2**, and that's the only hard requirement, as everything else runs
+inside containers so there's no Python, Postgres or Ollama to install locally.
 
 ```bash
 docker --version
@@ -31,25 +31,27 @@ docker compose version    # must be v2, not the old docker-compose binary
 
 Built and tested on Docker 24.0.5 with Compose v2.20.
 
-Compose v2 is the part that matters. The stack uses `depends_on: condition:` to order
-startup, and `--wait` to block until health checks pass. The old `docker-compose` binary
-ignores both, so services race each other and the worker starts before its topics exist.
+Compose v2 is the part that really matters here. The stack uses `depends_on: condition:`
+to order startup and `--wait` to block until the health checks pass, and the old
+`docker-compose` binary ignores both of them, so the services end up racing each other
+and the worker starts before its topics even exist.
 
-**About 8GB free disk.** Roughly 6GB of images plus a 1.9GB model.
+**About 8GB free disk**, meaning roughly 6GB of images plus a 1.9GB model.
 
-**No API keys, no accounts.** A GitHub token is optional and worth adding
-([why](#get-a-github-token)), but the stack runs without one.
+**No API keys and no accounts.** A GitHub token is optional and definitely worth adding
+([why](#get-a-github-token)), but the stack runs perfectly well without one.
 
 ### Task is optional
 
-Some commands below are written as `task something`. [Task](https://taskfile.dev) is a
-small command runner, like `make` with YAML. It is a nice to have but not a dependency.
+Some of the commands below are written as `task something`. [Task](https://taskfile.dev)
+is a small command runner, a bit like `make` but with YAML, and it's a nice to have
+rather than a dependency.
 
 ```bash
 brew install go-task    # macOS
 ```
 
-If you would rather not install it, every verb maps to a plain command:
+If you'd rather not install it, every verb maps onto a plain command:
 
 | Task | Without Task |
 |---|---|
@@ -75,7 +77,7 @@ docker compose up
 
 > [!TIP]
 > If you use [Task](https://github.com/go-task/task), `task setup` creates `.env` from
-> `.env.example` if it is missing, and leaves an existing one alone. Then:
+> `.env.example` when it's missing and leaves an existing one alone. Then:
 >
 > ```
 > task setup
@@ -85,39 +87,42 @@ docker compose up
 > `task --list` shows the rest.
 
 Open <http://localhost:8000>. The table is filled on boot from recorded results
-(`fixtures/triaged.json`) so you do not wait on a live pull request. The `How` column
-says `model` because they are a recording of an earlier run against a live model.
+(`fixtures/triaged.json`), so you don't have to sit there waiting on a live pull request,
+and the `How` column says `model` because those rows are a recording of an earlier run
+against a live model.
 
-First run also downloads a ~2GB model, so give the worker a few minutes. No API keys or
-accounts are needed.
+The first run also downloads a ~2GB model, so give the worker a few minutes. No API keys
+or accounts are needed at any point.
 
-To re-run the **live** reasoning loop over the same saved PRs (so every row is from
-*this* boot's model):
+To re-run the **live** reasoning loop over those same saved PRs, so that every row comes
+from *this* boot's model:
 
 ```bash
 task seed
 ```
-[!Note]
-**If the model download fails** (see below), the recorded rows are already on screen.
-You do not need `task seed:offline` unless you wiped the database.
+
+> [!NOTE]
+> **If the model download fails** (see below), the recorded rows are already on screen,
+> so you don't need `task seed:offline` unless you've wiped the database.
 
 ### If model download fails
 
-`ollama pull` fetches from a CDN that can be slow or unreachable from inside Docker; it
-timed out on the machine this was built on. The pull is allowed to fail so that the rest
-of the stack still starts.
+`ollama pull` fetches from a CDN that can be slow or unreachable from inside Docker, and
+it timed out on the machine this was built on. The pull is allowed to fail on purpose, so
+that the rest of the stack still starts.
 
 > [!NOTE]
-> The worker checks it can reach the model before it consumes anything, and waits if it
-> cannot, logging once a minute. Nothing is read off `pr.enriched` while it waits, so the
-> backlog is preserved and drains when a model appears. Consumer lag is the symptom:
-> `docker compose exec redpanda rpk group describe pr-triage-worker`.
+> The worker checks it can reach the model before consuming anything and waits if it
+> can't, logging once a minute. Nothing is read off `pr.enriched` while it waits, so the
+> backlog is preserved and drains once a model appears, and consumer lag is the symptom
+> to watch: `docker compose exec redpanda rpk group describe pr-triage-worker`.
 >
 > This is on purpose. Classifying without a model would write `fallback` rows and commit
-> the offsets, and since GitHub does not re-emit a `PullRequestEvent`, those pull requests
-> would never be classified again.
+> the offsets, and since GitHub doesn't re-emit a `PullRequestEvent`, those pull requests
+> would never get classified again.
 
-The recorded rows stay on screen either way. There are three ways to get live classification:
+The recorded rows stay on screen either way. There are three ways of getting live
+classification going:
 
 ```bash
 task seed:offline    # the recorded results, no model needed
@@ -138,7 +143,7 @@ echo "ANTHROPIC_API_KEY=sk-ant-…" >> .env
 
 > [!IMPORTANT]
 > Without a token the pipeline runs for about half an hour per hour and then stalls.
-> A classic PAT with **no scopes ticked** is enough: it only reads public data.
+> A classic PAT with **no scopes ticked** is enough, as it only reads public data.
 
 A classic PAT with no scopes it's more than enough as the system only reads public
 data.
@@ -181,10 +186,11 @@ task demo:fallback           # force the fallback path, see below
 `task --list` shows all of them.
 
 `task demo:fallback` runs the batch path (`scripts/seed.py`) against a model name that
-does not exist, so every record takes the retry and then the fallback. It is the one place
-that deliberately produces `unclear` / `fallback` rows, and it exists to make that path
-visible. It overwrites the recorded rows, so `task seed:offline` puts them back. The long-running worker behaves differently on purpose: it waits for a model
-rather than consuming without one, for the reason given above.
+doesn't exist, so every record takes the retry first and then the fallback. It's the one
+place that deliberately produces `unclear` / `fallback` rows and it exists purely to make
+that path visible, and since it overwrites the recorded rows, `task seed:offline` puts
+them back afterwards. The long-running worker behaves differently on purpose, as it waits
+for a model rather than consuming without one, for the reason given above.
 
 ## How it fits together
 
@@ -216,7 +222,7 @@ GitHub /events ──▶ Connect ──▶ topic pr.enriched ──▶ worker �
 ## Monitoring
 
 `docker compose up` also starts Prometheus on <http://localhost:9090> and Grafana on
-<http://localhost:3000>, no login.
+<http://localhost:3000>, with no login on either.
 
 **What is watched, and why.**
 
@@ -228,8 +234,9 @@ GitHub /events ──▶ Connect ──▶ topic pr.enriched ──▶ worker �
 | Model latency per call, p50 and p95 | Postgres | The number that decides how many workers you need |
 | Under-replicated partitions, leader changes, disk | Redpanda metrics | Broker health. The first three things to watch on a real cluster |
 
-**Two alerts** in `monitoring/alerts.yml`: lag above 20 for 5 minutes, and any new record
-on `pr.dlq` in 15 minutes. To see them fire:
+**Two alerts** live in `monitoring/alerts.yml`, one for lag above 20 sustained for 5
+minutes and one for any new record landing on `pr.dlq` within 15 minutes. To see them
+fire:
 
 ```bash
 docker compose stop worker        # lag climbs; alert fires after 5 min
@@ -238,27 +245,29 @@ docker compose start worker
 echo '{"test":1}' | docker compose exec -T redpanda rpk topic produce pr.dlq   # DLQ alert
 ```
 
-**Two dashboards** in Grafana. `PR Triage` is the two application panels above, built
-from SQL against `pr_triage`. `Redpanda Ops Dashboard` is the one Redpanda publishes in
-[redpanda-data/observability](https://github.com/redpanda-data/observability), used
-as-is. On this single-node stack the under-replicated and leader-change panels read zero
-and one respectively, which is correct. Disk is the one that moves.
+**Two dashboards** in Grafana. `PR Triage` holds the two application panels above, built
+from SQL against `pr_triage`, while `Redpanda Ops Dashboard` is the one Redpanda
+publishes in [redpanda-data/observability](https://github.com/redpanda-data/observability),
+used as-is without a single edit. On this single-node stack the under-replicated and
+leader-change panels read zero and one respectively, which is correct, and disk is the
+only one of the three that actually moves.
 
-**Why not OpenTelemetry.** Redpanda already exposes Prometheus metrics, and the
-application signals are already columns in Postgres. A collector would be a third
-container translating a format Prometheus reads natively. OTel earns its place when you
-want a trace per pull request across Connect, the queue, the worker and the model, to
-see where the 90 seconds go. That is the next step, not this one.
+**Why not OpenTelemetry.** Redpanda already exposes Prometheus metrics natively and the
+application signals are already columns sitting in Postgres, so a collector would only be
+a third container translating a format Prometheus reads anyway. OTel earns its place when
+you want a trace per pull request across Connect, the queue, the worker and the model, to
+see where those 90 seconds actually go, and that's the next step rather than this one.
 
 **One thing found while testing this.** Redpanda's built-in
 `redpanda_kafka_consumer_group_lag_sum` reads zero when the consumer group has no live
 member, which is exactly the case where the worker is dead. So the lag alert derives lag
-from the two raw gauges instead, high watermark minus committed offset, which survive an
-empty group. Verified by stopping the worker: the built-in gauge stayed at 0 while the
-derived value read 28. The alert fires for a dead worker as well as a slow one.
+from the two raw gauges instead, high watermark minus committed offset, as those survive
+an empty group. Verified by stopping the worker: the built-in gauge stayed at 0 while the
+derived value read 28, which means the alert now fires for a dead worker as well as for a
+slow one.
 
-**Requires** `enable_consumer_group_metrics` on the cluster, which `topics-init` sets.
-Without it neither gauge exists and the lag alert has no data.
+**Requires** `enable_consumer_group_metrics` on the cluster, which `topics-init` sets,
+because without it neither gauge exists and the lag alert has no data at all.
 
 ## The `label_source` column
 
@@ -272,11 +281,12 @@ Every row records **how** its label was reached:
 | `skipped` | Never asked the model (draft PR, or nothing to read) |
 
 > [!NOTE]
-> `unclear` from `fallback` and `unclear` from `skipped` look identical in the category
-> column and mean opposite things: one is a failed classification, the other is work
-> correctly not done. This column is how you tell them apart.
+> `unclear` coming from `fallback` and `unclear` coming from `skipped` look identical in
+> the category column while meaning opposite things, as one is a failed classification
+> and the other is work correctly not done. This column is how you tell them apart.
 
 ---
+
 ## What surprised me
 The Github event feeds payload provides literally nothing, and it's incredible sparse. If we take 52 sample eventsm *payload.pull_request* contains exactly 5 keys:
 * base
