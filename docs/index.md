@@ -60,8 +60,12 @@ rather than an extra step on top.
 
 | Page | What is in it |
 |---|---|
-| [Architecture](architecture.html) | Every component, what it does, where its code lives, and what would make it better |
+| [Architecture](architecture.html) | Each component, the decision behind it, why it matters and when I would flip it |
 | [Contracts](contracts.html) | The exact shapes each stage promises the next |
+| [Monitoring](monitoring.html) | What is watched, the two alerts, and why this isn't OpenTelemetry |
+| [The evaluation](evaluation.html) | Whether the model is earning its place, measured rather than argued |
+| [Tradeoffs](tradeoffs.html) | The decisions I made, the ones I would reverse, and where this falls over in production |
+| [Build log](build-log.html) | What broke while building this, written as it happened |
 | [Repository](https://github.com/pablogd-hashi/rp-ghtriage) | Source, plus the README with the run instructions |
 
 ## Running it

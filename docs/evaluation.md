@@ -1,7 +1,7 @@
 ---
 title: The evaluation
 layout: default
-nav_order: 6
+nav_order: 5
 ---
 
 # The evaluation

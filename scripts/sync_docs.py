@@ -47,18 +47,12 @@ def tradeoffs() -> bool:
         "---\n"
         "title: Tradeoffs\n"
         "layout: default\n"
-        "nav_order: 2\n"
+        "nav_order: 6\n"
         "---\n"
     )
-    intro = (
-        "What I found surprising, the decisions I made and would reverse, where this\n"
-        "falls over in production, and who it is actually for.\n\n"
-        "This is the same text as the bottom of the\n"
-        "[README](https://github.com/pablogd-hashi/rp-ghtriage#readme), which is where it\n"
-        "lives. It is reproduced here so it is readable without scrolling through the run\n"
-        "instructions first."
-    )
-    return write_page(ROOT / "docs/tradeoffs.md", front, intro, body)
+    # No preamble. The sections speak for themselves and an interviewer opening this
+    # page does not need to be told what a tradeoff is.
+    return write_page(ROOT / "docs/tradeoffs.md", front, "", body)
 
 
 def build_log() -> bool:
