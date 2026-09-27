@@ -1,0 +1,7 @@
+---
+description: Seam rules for every change in this repo
+alwaysApply: true
+---
+
+Follow the Seams and House rules sections in AGENTS.md. AGENTS.md is the source
+of truth. Do not invent a fourth seam.

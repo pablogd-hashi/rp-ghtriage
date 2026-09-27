@@ -1,0 +1,9 @@
+---
+description: Reasoning loop rules for triage Python
+globs: triage/**
+alwaysApply: false
+---
+
+Follow the House rules and Seams sections in AGENTS.md. If a decision can be an
+`if`, it is an `if` in code. `label_source` keeps its four values. `unclear` is
+written only by the worker.

@@ -14,3 +14,8 @@ docs/demo-runbook.md
 
 # Personal interview prep, not part of the deliverable
 docs/study-guide.md
+
+# Gate output and local factory worktrees
+gate.json
+.cursor/hooks/last-gate
+.worktrees/

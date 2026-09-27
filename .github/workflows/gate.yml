@@ -1,0 +1,40 @@
+name: gate
+
+on:
+  pull_request:
+    branches: [harness/agent-factory]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: pip install -r requirements.txt
+      - name: Gate
+        id: gate
+        run: python scripts/gate.py
+      - name: Comment gate.json
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ ! -f gate.json ]; then
+            echo "gate.json was not written"
+            exit 0
+          fi
+          {
+            echo "Gate result"
+            echo
+            echo '```json'
+            cat gate.json
+            echo '```'
+          } > /tmp/gate-comment.md
+          gh pr comment "${{ github.event.pull_request.number }}" --body-file /tmp/gate-comment.md

@@ -1,0 +1,8 @@
+---
+description: Connect configs filter and fetch. They do not classify.
+globs: connect/**
+alwaysApply: false
+---
+
+Follow AGENTS.md. No classification in Connect. Connect polls, filters, dedupes,
+fetches, truncates, and routes.
