@@ -124,6 +124,11 @@ category to `security`. The model is not asked for it, and it is not a value of
 `label_source`. A true value can sit next to `model`, `model_retry`, or
 `fallback`. It is never used to lower a label.
 
+`investigation` is a JSON object written by the investigator consumer, and only
+when `AGENT_INVESTIGATE=1`. `status` is `ok` or `failed`. A failed tool loop
+does not change `category` or `label_source`. With the flag off, the column
+stays null.
+
 ### Rules the loop must obey
 
 1. **A model label outside the enum is rejected, not coerced.** `"banana"` does not become

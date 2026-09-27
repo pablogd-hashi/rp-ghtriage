@@ -16,6 +16,7 @@ import time
 from confluent_kafka import Consumer, KafkaError, Producer
 
 from triage import store
+from triage.investigate import investigate_enabled, should_investigate
 from triage.llm import get_client
 from triage.reason import DEFAULT_THRESHOLD, triage
 
@@ -23,6 +24,8 @@ BROKERS = os.environ.get("REDPANDA_BROKERS", "redpanda:9092")
 IN_TOPIC = os.environ.get("IN_TOPIC", "pr.enriched")
 OUT_TOPIC = os.environ.get("OUT_TOPIC", "pr.triaged")
 DLQ_TOPIC = os.environ.get("DLQ_TOPIC", "pr.dlq")
+INVESTIGATE_TOPIC = os.environ.get("INVESTIGATE_TOPIC", "pr.investigate")
+INVESTIGATE = investigate_enabled(os.environ.get("AGENT_INVESTIGATE"))
 THRESHOLD = float(os.environ.get("CONFIDENCE_THRESHOLD", DEFAULT_THRESHOLD))
 
 _running = True
@@ -109,6 +112,14 @@ def main() -> int:
                 json.dumps({**record, "triage": result.model_dump(mode="json")}).encode(),
                 key=(record.get("pr_url") or "").encode(),
             )
+            if INVESTIGATE and should_investigate(result):
+                # The classifier already wrote the row. This is a second lane,
+                # so a slow tool loop cannot stall pr.enriched.
+                producer.produce(
+                    INVESTIGATE_TOPIC,
+                    json.dumps({**record, "triage": result.model_dump(mode="json")}).encode(),
+                    key=(record.get("pr_url") or "").encode(),
+                )
             print(f"{result.category.value:16} {result.confidence:.2f} "
                   f"[{result.label_source.value}] {record.get('repo')}#{record.get('pr_number')}",
                   flush=True)

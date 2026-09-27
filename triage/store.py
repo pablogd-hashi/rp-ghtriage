@@ -102,6 +102,15 @@ def save(conn, record: dict, result: TriageResult) -> None:
         cur.execute(UPSERT, row_from(record, result))
 
 
+def save_investigation(conn, pr_url: str, payload: dict) -> None:
+    """Attach a tool trace. Does not touch category or label_source."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE pr_triage SET investigation = %s::jsonb WHERE pr_url = %s",
+            (json.dumps(payload), pr_url),
+        )
+
+
 def recent(conn, category: str | None = None, limit: int = 100) -> list[dict]:
     """What the web page shows."""
     sql = "SELECT * FROM pr_triage"

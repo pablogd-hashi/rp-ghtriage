@@ -7,10 +7,13 @@ what makes the tests possible. FakeLLM implements the same one method.
 
 from __future__ import annotations
 
+import json
 import os
 from abc import ABC, abstractmethod
 
 import requests
+
+from .parse import extract_first_json_object, strip_fences
 
 
 class LLMError(Exception):
@@ -120,6 +123,35 @@ class OllamaLLM(LLMClient):
             return response.json()["message"]["content"]
         except (requests.RequestException, KeyError, ValueError) as exc:
             raise LLMError(f"ollama call failed: {exc}") from exc
+
+    def complete_with_tools(self, system: str, user: str, tools: list, max_tokens: int = 700) -> dict:
+        """Same chat endpoint. The model asks for one tool in JSON, or it stops.
+
+        There is no native tool API on this path. A reply that is neither a tool
+        call nor a final label fails in the agent loop and the workflow row stays.
+        """
+        names = ", ".join(tool["name"] for tool in tools)
+        guided = (
+            system
+            + "\n\nTo call one tool, reply with ONLY "
+            + '{"tool":"<name>","input":{}}. Allowed: '
+            + names
+            + ". Otherwise reply with the category JSON and no tool key."
+        )
+        text = self.complete(guided, user, max_tokens=max_tokens)
+        blob = extract_first_json_object(strip_fences(text))
+        if blob is not None:
+            try:
+                data = json.loads(blob)
+            except ValueError:
+                data = None
+            if isinstance(data, dict) and data.get("tool"):
+                return {
+                    "type": "tool",
+                    "name": str(data["tool"]),
+                    "input": data.get("input") or {},
+                }
+        return {"type": "final", "text": text}
 
 
 class AnthropicLLM(LLMClient):

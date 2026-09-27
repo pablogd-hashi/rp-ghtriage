@@ -36,6 +36,8 @@ CREATE TABLE IF NOT EXISTS pr_triage (
     label_source      TEXT        NOT NULL,
     -- True when a rule raised the category to security. Not a label_source.
     floor_raised      BOOLEAN     NOT NULL DEFAULT FALSE,
+    -- Tool-loop trace. Null until an investigator runs. Does not change category.
+    investigation     JSONB,
 
     model             TEXT,
     llm_calls         INTEGER     NOT NULL DEFAULT 0,

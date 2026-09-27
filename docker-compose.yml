@@ -45,7 +45,7 @@ services:
     command:
       - |
         set -e
-        rpk topic create pr.enriched pr.triaged pr.dlq \
+        rpk topic create pr.enriched pr.triaged pr.dlq pr.investigate pr.investigated \
           --brokers redpanda:9092 --partitions 1 --replicas 1 || true
         # Consumer-group lag metrics are off by default. Without this the lag
         # alert in monitoring/alerts.yml has no data.
@@ -216,8 +216,35 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-5}
       CONFIDENCE_THRESHOLD: ${CONFIDENCE_THRESHOLD:-0.65}
+      AGENT_INVESTIGATE: ${AGENT_INVESTIGATE:-0}
       PYTHONUNBUFFERED: "1"
     command: ["python", "worker.py"]
+    restart: unless-stopped
+
+  # Off unless you ask for the profile. A plain `docker compose up` does not
+  # start this, and the worker does not publish to it while AGENT_INVESTIGATE=0.
+  investigator:
+    profiles: ["investigate"]
+    build: .
+    container_name: investigator
+    depends_on:
+      postgres:
+        condition: service_healthy
+      topics-init:
+        condition: service_completed_successfully
+      ollama-pull:
+        condition: service_completed_successfully
+    environment:
+      REDPANDA_BROKERS: redpanda:9092
+      POSTGRES_DSN: postgresql://triage:triage@postgres:5432/triage
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-5}
+      AGENT_INVESTIGATE: "1"
+      PYTHONUNBUFFERED: "1"
+    command: ["python", "investigator.py"]
     restart: unless-stopped
 
   web:

@@ -91,6 +91,7 @@ def _row(r: dict) -> str:
   <td class="mono">{r["confidence"]:.2f}</td>
   <td><span class="src {_esc(src)}" title="{_esc(SOURCE_HELP.get(src, ""))}">{_esc(src)}</span></td>
   <td class="mono">{"yes" if r.get("floor_raised") else "—"}</td>
+  <td class="mono">{_esc((r.get("investigation") or {}).get("status") if isinstance(r.get("investigation"), dict) else "—") or "—"}</td>
   <td>{_esc(r.get("affected_area") or "—")}</td>
   <td class="note">{_esc(r.get("risk_note") or r.get("rationale") or "—")}</td>
   <td class="mono">{_esc(r.get("files_changed"))}</td>
@@ -117,7 +118,7 @@ def index(category: str | None = None, limit: int = 100):
     body = "".join(_row(r) for r in rows) if rows else ""
     table = f"""<div class="scroll"><table>
   <thead><tr>
-    <th>PR</th><th>Title</th><th>Category</th><th>Conf</th><th>How</th><th>Floor</th>
+    <th>PR</th><th>Title</th><th>Category</th><th>Conf</th><th>How</th><th>Floor</th><th>Trace</th>
     <th>Area</th><th>Risk note</th><th>Files</th><th>Calls</th><th>Latency</th>
   </tr></thead><tbody>{body}</tbody></table></div>""" if rows else """
   <div class="scroll"><div class="empty">
