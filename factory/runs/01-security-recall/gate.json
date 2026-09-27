@@ -1,0 +1,7 @@
+{
+  "tests": "passed",
+  "accuracy_full": 0.75,
+  "accuracy_ablated": null,
+  "security_recall": 0.25,
+  "floor_false_raises": null
+}

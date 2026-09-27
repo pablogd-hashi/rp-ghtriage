@@ -16,6 +16,6 @@ docs/demo-runbook.md
 docs/study-guide.md
 
 # Gate output and local factory worktrees
-gate.json
+/gate.json
 .cursor/hooks/last-gate
 .worktrees/
