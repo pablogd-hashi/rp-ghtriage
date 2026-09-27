@@ -1,0 +1,10 @@
+{
+  "osv": {
+    "left-pad@1.0.0": {
+      "package": "left-pad",
+      "version": "1.0.0",
+      "vulns": [{"id": "TEST-1", "summary": "fixture advisory"}]
+    }
+  },
+  "files": {}
+}

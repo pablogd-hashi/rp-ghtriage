@@ -6,6 +6,7 @@ once without, and prints the two side by side. See evals/README.md for why.
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import pathlib
@@ -142,9 +143,126 @@ def gate_metrics(labels) -> dict:
     }
 
 
-def main() -> int:
+def run_agent_mode(records: dict, labels: list, repeat: int) -> int:
+    """Four rows. The agent rows are scripted unless a person runs a hosted model.
+
+    Scripted means the replies are fixtures. The numbers show the loop, the
+    budget, and label stability. They are not a claim about a hosted model.
+    """
+    from triage.agent import run_agent
+    from triage.contract import Category, LabelSource, TriageResult
+    from triage.llm import ScriptedToolLLM
+    from triage.reason import apply_floor
+
+    catalog = json.loads((ROOT / "fixtures/tool_catalog.json").read_text())
+    rows = recorded_predictions()
+    workflow_hits = 0
+    workflow_sec = 0
+    sec_total = 0
+    floor_hits = 0
+    floor_sec = 0
+    agent_hits = 0
+    agent_sec = 0
+    both_hits = 0
+    both_sec = 0
+    agent_calls = 0
+    both_calls = 0
+    agent_latency = 0
+    both_latency = 0
+    agent_flips = 0
+    both_flips = 0
+    workflow_latency = 0
+
+    for item in labels:
+        record = records[item["event_id"]]
+        recorded = rows[item["event_id"]]
+        workflow_latency += int(recorded.get("latency_ms") or 0)
+        before = TriageResult(
+            category=Category(recorded["category"]),
+            confidence=float(recorded["confidence"]),
+            rationale=recorded.get("rationale") or "",
+            affected_area=recorded.get("affected_area"),
+            risk_note=recorded.get("risk_note"),
+            evidence_files=recorded.get("evidence") or [],
+            label_source=LabelSource(recorded["label_source"]),
+        )
+        after = apply_floor(before, record)
+        if before.category.value == item["label"]:
+            workflow_hits += 1
+        if after.category.value == item["label"]:
+            floor_hits += 1
+        if item["label"] == "security":
+            sec_total += 1
+            if before.category is Category.security:
+                workflow_sec += 1
+            if after.category is Category.security:
+                floor_sec += 1
+
+        if before.label_source is LabelSource.skipped:
+            # unclear belongs to the worker. The agent is not asked.
+            agent_labels = [before.category.value] * repeat
+            both_labels = [before.category.value] * repeat
+        else:
+            def once(current: str) -> dict:
+                client = ScriptedToolLLM([
+                    {"type": "tool", "name": "list_changed_files", "input": {}},
+                    json.dumps({
+                        "category": after.category.value,
+                        "rationale": "scripted; the floor label is the proposal",
+                    }),
+                ])
+                return run_agent(record, client, current_category=current, catalog=catalog)
+
+            agent_labels = []
+            both_labels = []
+            for _ in range(repeat):
+                agent_out = once(before.category.value)
+                both_out = once(after.category.value)
+                agent_labels.append(agent_out["category"])
+                both_labels.append(both_out["category"])
+                agent_calls += agent_out["tool_calls"]
+                both_calls += both_out["tool_calls"]
+                agent_latency += agent_out["latency_ms"]
+                both_latency += both_out["latency_ms"]
+        if len(set(agent_labels)) > 1:
+            agent_flips += 1
+        if len(set(both_labels)) > 1:
+            both_flips += 1
+        if agent_labels[-1] == item["label"]:
+            agent_hits += 1
+        if both_labels[-1] == item["label"]:
+            both_hits += 1
+        if item["label"] == "security":
+            if agent_labels[-1] == "security":
+                agent_sec += 1
+            if both_labels[-1] == "security":
+                both_sec += 1
+
+    total = len(labels)
+    runs = total * repeat
+    table = [
+        ("workflow", workflow_hits, workflow_sec, 0, workflow_latency // total, 0),
+        ("workflow+floor", floor_hits, floor_sec, 0, workflow_latency // total, 0),
+        ("agent (scripted)", agent_hits, agent_sec, agent_calls, agent_latency // runs, agent_flips),
+        ("floor+agent (scripted)", both_hits, both_sec, both_calls, both_latency // runs, both_flips),
+    ]
+    print(f"agent source: scripted    repeat: {repeat}    fixtures: {total}")
+    print("A hosted model is LLM_PROVIDER=anthropic. These agent rows are the loop, not that model.\n")
+    print(f"{'run':<24}{'correct':>10}{'sec recall':>12}{'tool calls':>12}{'latency':>10}{'flips':>8}")
+    print("-" * 76)
+    for name, hits, sec, calls, latency, flips in table:
+        print(f"{name:<24}{hits:>5}/{total:<4}{sec:>6}/{sec_total:<5}{calls:>12}{latency:>8}ms{flips:>8}")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--gate", action="store_true")
+    parser.add_argument("--mode", choices=("workflow", "agent"), default="workflow")
+    parser.add_argument("--repeat", type=int, default=1)
+    args = parser.parse_args(argv)
     records, labels = load()
-    if "--gate" in sys.argv:
+    if args.gate:
         metrics = gate_metrics(labels)
         print(
             f"recorded security recall: {metrics['security_hits']}/{metrics['security_total']}"
@@ -162,6 +280,9 @@ def main() -> int:
             "floor_security_recall": metrics["floor_security_recall"],
         }))
         return 0
+
+    if args.mode == "agent":
+        return run_agent_mode(records, labels, max(1, args.repeat))
 
     client = get_client()
     print(f"model: {client.name}   threshold: {THRESHOLD}   fixtures: {len(labels)}\n")

@@ -69,6 +69,27 @@ class FakeLLM(LLMClient):
         return self.replies.pop(0)
 
 
+class ScriptedToolLLM(FakeLLM):
+    """FakeLLM that also speaks the tool loop. Replies are dict steps or final text.
+
+    A dict is returned as the step. A string is a final answer. Tests use this
+    so the agent loop never touches the network.
+    """
+
+    def complete_with_tools(self, system: str, user: str, tools: list, max_tokens: int = 700) -> dict:
+        self.calls.append({
+            "system": system,
+            "user": user,
+            "tools": ",".join(t["name"] for t in tools),
+        })
+        if not self.replies:
+            raise LLMError("ScriptedToolLLM ran out of scripted replies")
+        raw = self.replies.pop(0)
+        if isinstance(raw, str):
+            return {"type": "final", "text": raw}
+        return raw
+
+
 class OllamaLLM(LLMClient):
     """Local model. Free, no account, works with no network."""
 
@@ -132,6 +153,41 @@ class AnthropicLLM(LLMClient):
             return response.json()["content"][0]["text"]
         except (requests.RequestException, KeyError, IndexError, ValueError) as exc:
             raise LLMError(f"anthropic call failed: {exc}") from exc
+
+    def complete_with_tools(self, system: str, user: str, tools: list, max_tokens: int = 700) -> dict:
+        """One round-trip. A tool_use block or the text, never both acted on."""
+        try:
+            response = requests.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": self.api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": self.model,
+                    "max_tokens": max_tokens,
+                    "temperature": 0,
+                    "system": system,
+                    "tools": tools,
+                    "messages": [{"role": "user", "content": user}],
+                },
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+            blocks = response.json()["content"]
+        except (requests.RequestException, KeyError, ValueError) as exc:
+            raise LLMError(f"anthropic tool call failed: {exc}") from exc
+
+        for block in blocks:
+            if block.get("type") == "tool_use":
+                return {
+                    "type": "tool",
+                    "name": block.get("name") or "",
+                    "input": block.get("input") or {},
+                }
+        text = "\n".join(block.get("text", "") for block in blocks if block.get("type") == "text")
+        return {"type": "final", "text": text}
 
 
 def get_client() -> LLMClient:
