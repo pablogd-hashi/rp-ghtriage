@@ -65,6 +65,7 @@ rather than an extra step on top.
 | [Monitoring](monitoring.html) | What is watched, the two alerts, and why this isn't OpenTelemetry |
 | [The evaluation](evaluation.html) | Whether the model is earning its place, measured rather than argued |
 | [Tradeoffs](tradeoffs.html) | The decisions I made, the ones I would reverse, and where this falls over in production |
+| [Agent factory](agent-factory.html) | The harness on `harness/agent-factory`: gate, factory, floor, and the investigator that stays off |
 | [Repository](https://github.com/pablogd-hashi/rp-ghtriage) | Source, plus the README with the run instructions |
 
 ## Running it
