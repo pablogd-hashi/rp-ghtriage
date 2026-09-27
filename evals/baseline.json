@@ -1,6 +1,6 @@
 {
   "security_recall": 0.25,
-  "floor_security_recall": null,
-  "floor_false_raises": null,
-  "source": "fixtures/triaged.json scored against evals/labels.jsonl. 1 of 4 security fixtures (f012). f001, f003 and f006 were misses."
+  "floor_security_recall": 1.0,
+  "floor_false_raises": 0,
+  "source": "Workflow security recall is the recorded run, 1 of 4. Floor security recall is the raise-only rules on those same rows, 4 of 4, with no false raises. The patterns were written knowing the fixtures."
 }

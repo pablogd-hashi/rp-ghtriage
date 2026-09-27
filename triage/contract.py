@@ -71,6 +71,9 @@ class TriageResult(BaseModel):
     risk_note: str | None = None
 
     label_source: LabelSource
+    # Set by the worker when a rule raised the category to security.
+    # The model is not asked for this, and it is not a fifth label_source.
+    floor_raised: bool = False
     model: str = ""
     llm_calls: int = 0
     latency_ms: int = 0

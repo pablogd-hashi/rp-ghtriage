@@ -11,6 +11,11 @@ from triage.llm import FakeLLM, LLMClient, LLMError
 from triage.reason import should_skip, triage
 
 GOOD_PATCH = "@@ -1,3 +1,4 @@\n-    jwt.decode(t, S)\n+    jwt.decode(t, S, options={'verify_exp': False})"
+BENIGN_PATCH = "@@ -1,2 +1,2 @@\n-# old comment\n+# new comment\n"
+CRYPTO_BUMP = "@@ -1,2 +1,2 @@\n-\tgolang.org/x/crypto v0.1.0\n+\tgolang.org/x/crypto v0.17.0\n"
+CORS_PATCH = '@@ -1,4 +1,4 @@\n allowed_origins:\n-  - https://app.acme.com\n+  - "*"\n-allow_credentials: false\n+allow_credentials: true\n'
+SQL_PATCH = """@@ -1,2 +1,2 @@\n-rows := db.Query("SELECT * FROM items WHERE id = '" + id + "'")\n+rows := db.QueryContext(ctx, "SELECT * FROM items WHERE id = $1", id)\n"""
+KEY_PATCH = "@@ -1,2 +1,2 @@\n-const API_KEY = process.env.REACT_APP_API_KEY;\n+const API_KEY = 'sk_live_51H8xQ2eZvKYlo2C';\n"
 
 
 def record(**over) -> dict:
@@ -20,7 +25,7 @@ def record(**over) -> dict:
         "title": "bump deps", "body": "", "files_changed": 1,
         "additions": 1, "deletions": 1,
         "files": [{"filename": "src/auth.py", "status": "modified",
-                   "additions": 1, "deletions": 1, "patch": GOOD_PATCH}],
+                   "additions": 1, "deletions": 1, "patch": BENIGN_PATCH}],
     }
     base.update(over)
     return base
@@ -186,3 +191,65 @@ def test_dead_model_is_reported_as_unavailable():
 
 def test_working_model_is_reported_as_available():
     assert FakeLLM([]).available() is True
+
+
+def _file(name: str, patch: str) -> dict:
+    return {"filename": name, "status": "modified", "additions": 1, "deletions": 1, "patch": patch}
+
+
+def test_floor_raises_jwt_expiry_disabled_even_when_the_model_says_deps():
+    llm = FakeLLM([
+        classification(cat="dependency-bump", score=0.9),
+        DETAILS,
+    ])
+    result = triage(record(files=[_file("src/auth/middleware.py", GOOD_PATCH)]), llm)
+    assert result.category is Category.security
+    assert result.floor_raised is True
+    assert result.label_source is LabelSource.model
+
+
+def test_floor_raises_string_built_sql():
+    llm = FakeLLM([classification(cat="refactor", score=0.9), DETAILS])
+    result = triage(record(files=[_file("internal/db/query.go", SQL_PATCH)]), llm)
+    assert result.category is Category.security
+    assert result.floor_raised is True
+
+
+def test_floor_raises_cors_wildcard_with_credentials():
+    llm = FakeLLM([classification(cat="refactor", score=0.9), DETAILS])
+    result = triage(record(files=[_file("config/cors.yaml", CORS_PATCH)]), llm)
+    assert result.category is Category.security
+    assert result.floor_raised is True
+
+
+def test_floor_raises_hardcoded_key():
+    llm = FakeLLM([classification(cat="refactor", score=0.9), DETAILS])
+    result = triage(record(files=[_file("src/api/client.ts", KEY_PATCH)]), llm)
+    assert result.category is Category.security
+    assert result.floor_raised is True
+
+
+def test_crypto_version_bump_is_not_raised():
+    note = ('{"affected_area":"dependencies","risk_note":'
+            '"crypto bump may need updated tests for cryptographic functions."}')
+    llm = FakeLLM([classification(cat="dependency-bump", score=0.9), note])
+    result = triage(record(files=[_file("go.mod", CRYPTO_BUMP)]), llm)
+    assert result.category is Category.dependency_bump
+    assert result.floor_raised is False
+
+
+def test_floor_never_lowers_a_security_label():
+    llm = FakeLLM([classification(cat="security", score=0.9), DETAILS])
+    result = triage(record(), llm)
+    assert result.category is Category.security
+    assert result.floor_raised is False
+
+
+def test_disagreement_between_label_and_security_note_raises():
+    note = ('{"affected_area":"security","risk_note":'
+            '"may expose the gateway to unauthorized access"}')
+    llm = FakeLLM([classification(cat="refactor", score=0.9), note])
+    result = triage(record(), llm)
+    assert result.category is Category.security
+    assert result.floor_raised is True
+    assert result.label_source is LabelSource.model

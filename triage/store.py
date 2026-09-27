@@ -28,12 +28,12 @@ INSERT INTO pr_triage (
     pr_url, repo, pr_number, title, author,
     files_changed, additions, deletions,
     category, confidence, rationale, affected_area, risk_note,
-    label_source, model, llm_calls, latency_ms, evidence, event_created_at
+    label_source, floor_raised, model, llm_calls, latency_ms, evidence, event_created_at
 ) VALUES (
     %(pr_url)s, %(repo)s, %(pr_number)s, %(title)s, %(author)s,
     %(files_changed)s, %(additions)s, %(deletions)s,
     %(category)s, %(confidence)s, %(rationale)s, %(affected_area)s, %(risk_note)s,
-    %(label_source)s, %(model)s, %(llm_calls)s, %(latency_ms)s, %(evidence)s, %(event_created_at)s
+    %(label_source)s, %(floor_raised)s, %(model)s, %(llm_calls)s, %(latency_ms)s, %(evidence)s, %(event_created_at)s
 )
 ON CONFLICT (pr_url) DO UPDATE SET
     title            = EXCLUDED.title,
@@ -43,6 +43,7 @@ ON CONFLICT (pr_url) DO UPDATE SET
     affected_area    = EXCLUDED.affected_area,
     risk_note        = EXCLUDED.risk_note,
     label_source     = EXCLUDED.label_source,
+    floor_raised     = EXCLUDED.floor_raised,
     model            = EXCLUDED.model,
     llm_calls        = EXCLUDED.llm_calls,
     latency_ms       = EXCLUDED.latency_ms,
@@ -87,6 +88,7 @@ def row_from(record: dict, result: TriageResult) -> dict:
         "affected_area": result.affected_area,
         "risk_note": result.risk_note,
         "label_source": result.label_source.value,
+        "floor_raised": result.floor_raised,
         "model": result.model,
         "llm_calls": result.llm_calls,
         "latency_ms": result.latency_ms,

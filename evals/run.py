@@ -71,6 +71,53 @@ def recorded_predictions() -> dict[str, dict]:
     return {rec["event_id"]: by_title[rec["title"]] for rec in enriched}
 
 
+def floor_over_recorded(labels) -> dict:
+    """Apply the raise-only floor to the recorded rows. No model call.
+
+    The patterns were written knowing these fixtures, so a perfect score here
+    is the rules firing, not a blind measurement of a model.
+    """
+    from triage.contract import Category, LabelSource, TriageResult
+    from triage.reason import apply_floor
+
+    enriched = {rec["event_id"]: rec for rec in json.loads((ROOT / "fixtures/enriched.json").read_text())}
+    rows = recorded_predictions()
+    false_raises = 0
+    sec_hits = sec_total = hits = 0
+    for item in labels:
+        row = rows[item["event_id"]]
+        before = TriageResult(
+            category=Category(row["category"]),
+            confidence=float(row["confidence"]),
+            rationale=row.get("rationale") or "",
+            affected_area=row.get("affected_area"),
+            risk_note=row.get("risk_note"),
+            evidence_files=row.get("evidence") or [],
+            label_source=LabelSource(row["label_source"]),
+        )
+        after = apply_floor(before, enriched[item["event_id"]])
+        if after.category.value == item["label"]:
+            hits += 1
+        if item["label"] == "security":
+            sec_total += 1
+            if after.category is Category.security:
+                sec_hits += 1
+        changed_to_security = (
+            before.category is not Category.security and after.category is Category.security
+        )
+        if item["label"] != "security" and changed_to_security:
+            false_raises += 1
+    total = len(labels)
+    return {
+        "hits": hits,
+        "total": total,
+        "security_hits": sec_hits,
+        "security_total": sec_total,
+        "floor_false_raises": false_raises,
+        "floor_security_recall": round(sec_hits / sec_total, 4) if sec_total else None,
+    }
+
+
 def gate_metrics(labels) -> dict:
     """Numbers scripts/gate.py reads. Recorded rows only, so CI does not need a model."""
     predicted_rows = recorded_predictions()
@@ -78,15 +125,20 @@ def gate_metrics(labels) -> dict:
     hits = sum(1 for item in labels if predicted.get(item["event_id"]) == item["label"])
     sec_hits, sec_total = security_recall(labels, predicted)
     total = len(labels)
+    floor = floor_over_recorded(labels)
     return {
         "accuracy_full": round(hits / total, 4) if total else None,
         "accuracy_ablated": None,
         "security_recall": round(sec_hits / sec_total, 4) if sec_total else None,
-        "floor_false_raises": None,
+        "floor_false_raises": floor["floor_false_raises"],
+        "floor_security_recall": floor["floor_security_recall"],
         "security_hits": sec_hits,
         "security_total": sec_total,
         "hits": hits,
         "total": total,
+        "floor_hits": floor["hits"],
+        "floor_security_hits": floor["security_hits"],
+        "floor_security_total": floor["security_total"],
     }
 
 
@@ -97,11 +149,17 @@ def main() -> int:
         print(
             f"recorded security recall: {metrics['security_hits']}/{metrics['security_total']}"
         )
+        print(
+            f"floor: {metrics['floor_hits']}/{metrics['total']}  "
+            f"security {metrics['floor_security_hits']}/{metrics['floor_security_total']}  "
+            f"false raises {metrics['floor_false_raises']}"
+        )
         print("GATE_JSON " + json.dumps({
             "accuracy_full": metrics["accuracy_full"],
             "accuracy_ablated": metrics["accuracy_ablated"],
             "security_recall": metrics["security_recall"],
             "floor_false_raises": metrics["floor_false_raises"],
+            "floor_security_recall": metrics["floor_security_recall"],
         }))
         return 0
 

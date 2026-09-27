@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS pr_triage (
     --   fallback     both attempts failed; we wrote "unclear" rather than guessing
     --   skipped      never asked the model (draft PR, no files, nothing to read)
     label_source      TEXT        NOT NULL,
+    -- True when a rule raised the category to security. Not a label_source.
+    floor_raised      BOOLEAN     NOT NULL DEFAULT FALSE,
 
     model             TEXT,
     llm_calls         INTEGER     NOT NULL DEFAULT 0,

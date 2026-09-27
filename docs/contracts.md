@@ -91,6 +91,7 @@ alone has a hole in it.
  "affected_area": "authentication",
  "risk_note": "Changes the empty-token branch; test the reject path.",
  "label_source": "model",
+ "floor_raised": false,
  "llm_calls": 2,
  "latency_ms": 3120
 }
@@ -117,6 +118,11 @@ alone has a hole in it.
 | `model_retry` | First answer was unusable or unsure; the stricter retry worked |
 | `fallback` | Both attempts failed. Category is forced to `unclear`, confidence to 0 |
 | `skipped` | The model was never called (draft PR, no files, nothing to read) |
+
+`floor_raised` is a boolean the worker sets. It is true when a rule raised the
+category to `security`. The model is not asked for it, and it is not a value of
+`label_source`. A true value can sit next to `model`, `model_retry`, or
+`fallback`. It is never used to lower a label.
 
 ### Rules the loop must obey
 

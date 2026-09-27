@@ -11,6 +11,7 @@ absence we ignore.
 from __future__ import annotations
 
 import json
+import re
 import time
 
 from .contract import Category, LabelSource, TriageResult
@@ -49,6 +50,58 @@ def should_skip(record: dict) -> str | None:
         return "no patch content and no title"
 
     return None
+
+
+def floor_pattern(record: dict) -> str | None:
+    """Raise-only patterns over the patch text. Written knowing the fixtures.
+
+    f001 disables JWT expiry, f003 builds SQL with string concatenation, f006
+    opens CORS to * with credentials, f012 hardcodes a live key. An x/crypto
+    version bump (f010) matches none of these.
+    """
+    text = "\n".join((f.get("patch") or "") for f in (record.get("files") or []))
+    if re.search(r"verify_exp['\"]?\s*:\s*False", text):
+        return "jwt verify_exp disabled"
+    wildcard = '"*"' in text or "'*'" in text
+    if wildcard and re.search(r"allow_credentials:\s*true", text):
+        return "cors wildcard with credentials"
+    if re.search(r"sk_live_[A-Za-z0-9]+", text):
+        return "hardcoded key"
+    if re.search(r"""['"]\s*\+\s*\w+\s*\+\s*['"]""", text):
+        return "string-built sql"
+    return None
+
+
+def floor_disagreement(
+    category: str, risk_note: str | None, affected_area: str | None
+) -> str | None:
+    """The note already says this is security, and the label does not."""
+    if category == Category.security.value:
+        return None
+    if (affected_area or "").strip().lower() == "security":
+        return "affected_area is security"
+    note = (risk_note or "").lower()
+    if "sql injection" in note or "unauthorized access" in note:
+        return "risk_note describes a security failure"
+    return None
+
+
+def apply_floor(result: TriageResult, record: dict) -> TriageResult:
+    """May set the category to security. Never lowers one."""
+    if result.label_source is LabelSource.skipped:
+        return result.model_copy(update={"floor_raised": False})
+    reason = floor_pattern(record) or floor_disagreement(
+        result.category.value, result.risk_note, result.affected_area
+    )
+    if reason is None:
+        return result.model_copy(update={"floor_raised": False})
+    if result.category is Category.security:
+        return result.model_copy(update={"floor_raised": True})
+    return result.model_copy(update={
+        "category": Category.security,
+        "floor_raised": True,
+        "rationale": f"{result.rationale} Floor raised to security: {reason}.",
+    })
 
 
 def _skipped(record: dict, reason: str, started: float) -> TriageResult:
@@ -155,15 +208,21 @@ def triage(
             retried = parse_classification(raw)
         except (ParseError, LLMError) as exc:
             reason = failure or f"low confidence {low} and retry failed"
-            return _fallback(record, f"{reason}; retry also failed ({exc})", client.name, calls, started)
+            return apply_floor(
+                _fallback(record, f"{reason}; retry also failed ({exc})", client.name, calls, started),
+                record,
+            )
 
         # The retry parsed. If the model is STILL telling us it is unsure, we take
         # it at its word rather than storing a label neither of us believes.
         if retried.confidence.score < threshold:
-            return _fallback(
+            return apply_floor(
+                _fallback(
+                    record,
+                    f"model unsure twice (best score {retried.confidence.score})",
+                    client.name, calls, started,
+                ),
                 record,
-                f"model unsure twice (best score {retried.confidence.score})",
-                client.name, calls, started,
             )
 
         classification = retried
@@ -177,15 +236,18 @@ def triage(
     calls += 1
     details = _extract_details(client, record, classification.evidence_files)
 
-    return TriageResult(
-        category=classification.category,
-        confidence=classification.confidence.score,
-        rationale=classification.confidence.rationale,
-        evidence_files=classification.evidence_files,
-        affected_area=details.get("affected_area"),
-        risk_note=details.get("risk_note"),
-        label_source=source,
-        model=client.name,
-        llm_calls=calls,
-        latency_ms=int((time.monotonic() - started) * 1000),
+    return apply_floor(
+        TriageResult(
+            category=classification.category,
+            confidence=classification.confidence.score,
+            rationale=classification.confidence.rationale,
+            evidence_files=classification.evidence_files,
+            affected_area=details.get("affected_area"),
+            risk_note=details.get("risk_note"),
+            label_source=source,
+            model=client.name,
+            llm_calls=calls,
+            latency_ms=int((time.monotonic() - started) * 1000),
+        ),
+        record,
     )

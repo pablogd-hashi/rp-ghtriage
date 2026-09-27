@@ -1,6 +1,9 @@
 """The two prompts. Kept apart from the loop so the wording can change without
 touching the control flow, and so the exact wording is easy to find and audit.
 
+floor_raised is not a model field. The worker sets it from a rule. It is
+deliberately absent from both prompts below.
+
 Two calls, not one, and they do different jobs:
 
   CLASSIFY , reads everything, picks one label, says how sure it is.

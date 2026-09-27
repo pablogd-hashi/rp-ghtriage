@@ -19,3 +19,5 @@ SELECT 1 FROM pr_triage LIMIT 0;
 
 -- Example (uncomment and rename when the extension asks for a new field):
 -- ALTER TABLE pr_triage ADD COLUMN IF NOT EXISTS severity TEXT;
+
+ALTER TABLE pr_triage ADD COLUMN IF NOT EXISTS floor_raised BOOLEAN NOT NULL DEFAULT FALSE;

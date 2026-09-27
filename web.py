@@ -90,6 +90,7 @@ def _row(r: dict) -> str:
   <td><span class="badge" style="background:{colour}">{_esc(cat)}</span></td>
   <td class="mono">{r["confidence"]:.2f}</td>
   <td><span class="src {_esc(src)}" title="{_esc(SOURCE_HELP.get(src, ""))}">{_esc(src)}</span></td>
+  <td class="mono">{"yes" if r.get("floor_raised") else "—"}</td>
   <td>{_esc(r.get("affected_area") or "—")}</td>
   <td class="note">{_esc(r.get("risk_note") or r.get("rationale") or "—")}</td>
   <td class="mono">{_esc(r.get("files_changed"))}</td>
@@ -116,7 +117,7 @@ def index(category: str | None = None, limit: int = 100):
     body = "".join(_row(r) for r in rows) if rows else ""
     table = f"""<div class="scroll"><table>
   <thead><tr>
-    <th>PR</th><th>Title</th><th>Category</th><th>Conf</th><th>How</th>
+    <th>PR</th><th>Title</th><th>Category</th><th>Conf</th><th>How</th><th>Floor</th>
     <th>Area</th><th>Risk note</th><th>Files</th><th>Calls</th><th>Latency</th>
   </tr></thead><tbody>{body}</tbody></table></div>""" if rows else """
   <div class="scroll"><div class="empty">
@@ -137,7 +138,8 @@ Page refreshes every 10s.</p>
 <code>model</code> {SOURCE_HELP['model']} ·
 <code>model_retry</code> {SOURCE_HELP['model_retry']} ·
 <code>fallback</code> {SOURCE_HELP['fallback']} ·
-<code>skipped</code> {SOURCE_HELP['skipped']}.</p>
+<code>skipped</code> {SOURCE_HELP['skipped']}.
+<strong>Floor</strong> is yes when a rule raised the category to security. The How column does not change.</p>
 </div></body></html>"""
 
 
