@@ -7,7 +7,7 @@ __pycache__/
 connect/examples/scratch/
 
 # Scratch notes and demo scripts. Local only.
-PLAN.md
+/PLAN.md
 docs/eli5.md
 docs/seam-map.md
 docs/demo-runbook.md
