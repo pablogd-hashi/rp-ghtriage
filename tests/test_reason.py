@@ -186,3 +186,28 @@ def test_dead_model_is_reported_as_unavailable():
 
 def test_working_model_is_reported_as_available():
     assert FakeLLM([]).available() is True
+
+
+def test_trace_records_each_step_without_changing_the_label():
+    llm = FakeLLM([classification(score=0.9), DETAILS])
+    trace: list = []
+    seen: list = []
+    result = triage(record(), llm, threshold=0.65, trace=trace, on_step=seen.append)
+
+    assert result.label_source is LabelSource.model
+    assert [step["step"] for step in trace] == ["guard", "classify", "gate", "details"]
+    assert seen == trace
+    assert trace[0]["output"] == "proceed"
+    assert trace[2]["output"] == "keep"
+    assert "src/auth.py" in trace[1]["input"]
+    assert "security" in trace[1]["output"]
+    assert DETAILS in trace[3]["output"]
+
+
+def test_trace_on_a_skip_stops_before_the_model():
+    trace: list = []
+    result = triage(record(draft=True), FakeLLM([]), trace=trace)
+
+    assert result.label_source is LabelSource.skipped
+    assert [step["step"] for step in trace] == ["guard"]
+    assert "draft" in trace[0]["output"]

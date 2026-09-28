@@ -1,0 +1,22 @@
+{
+  "tests": "passed",
+  "security_recall": 0.25,
+  "accuracy_full": 0.75,
+  "acceptance": [
+    {
+      "id": "AC-1",
+      "proof": "tests/test_eval_gate.py::test_security_recall_printed",
+      "result": "passed"
+    },
+    {
+      "id": "AC-2",
+      "proof": "tests/test_eval_gate.py::test_gate_json_no_model",
+      "result": "passed"
+    },
+    {
+      "id": "AC-3",
+      "proof": "gate:security_recall",
+      "result": "passed"
+    }
+  ]
+}

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Callable
 
 from .contract import Category, LabelSource, TriageResult
 from .llm import LLMClient, LLMError
@@ -82,15 +83,40 @@ def _fallback(record: dict, reason: str, model: str, calls: int, started: float)
     )
 
 
-def _extract_details(client: LLMClient, record: dict, evidence_files: list[str]) -> dict:
+def _trace(
+    trace: list | None,
+    step: str,
+    entered: str,
+    left: str,
+    on_step: Callable[[dict], None] | None = None,
+) -> None:
+    """Record one step for the viewer. The loop's decisions do not read this."""
+    item = {"step": step, "input": entered, "output": left}
+    if trace is not None:
+        trace.append(item)
+    if on_step is not None:
+        on_step(item)
+
+
+def _extract_details(
+    client: LLMClient,
+    record: dict,
+    evidence_files: list[str],
+    trace: list | None = None,
+    on_step: Callable[[dict], None] | None = None,
+) -> dict:
     """The second, narrower call. Best-effort by design.
 
     If this fails we keep the classification and lose only the prose note, the
     label is the valuable part, and it is already in hand. So a failure here
     must never downgrade a good classification to a fallback.
     """
+    prompt = details_user(record, evidence_files)
+    traced = False
     try:
-        raw = client.complete(DETAILS_SYSTEM, details_user(record, evidence_files), max_tokens=300)
+        raw = client.complete(DETAILS_SYSTEM, prompt, max_tokens=300)
+        _trace(trace, "details", prompt, raw, on_step)
+        traced = True
         blob = extract_first_json_object(strip_fences(raw))
         if blob is None:
             return {}
@@ -101,7 +127,9 @@ def _extract_details(client: LLMClient, record: dict, evidence_files: list[str])
             "affected_area": str(data.get("affected_area", ""))[:120] or None,
             "risk_note": str(data.get("risk_note", ""))[:400] or None,
         }
-    except (LLMError, ValueError, TypeError):
+    except (LLMError, ValueError, TypeError) as exc:
+        if not traced:
+            _trace(trace, "details", prompt, f"details call failed ({exc})", on_step)
         return {}
 
 
@@ -110,6 +138,8 @@ def triage(
     client: LLMClient,
     threshold: float = DEFAULT_THRESHOLD,
     include_patches: bool = True,
+    trace: list | None = None,
+    on_step: Callable[[dict], None] | None = None,
 ) -> TriageResult:
     """Classify one enriched pull request record.
 
@@ -121,20 +151,32 @@ def triage(
 
     # SEAM 1 --------------------------------------------------------------------
     skip_reason = should_skip(record)
+    _trace(
+        trace,
+        "guard",
+        f"repo={record.get('repo')} draft={bool(record.get('draft'))} "
+        f"files={len(record.get('files') or [])} title={record.get('title') or ''}",
+        skip_reason or "proceed",
+        on_step,
+    )
     if skip_reason:
         return _skipped(record, skip_reason, started)
 
     # Attempt 1: the normal prompt.
     classification = None
     failure = ""
+    prompt = classify_user(record, include_patches)
     try:
         calls += 1
-        raw = client.complete(CLASSIFY_SYSTEM, classify_user(record, include_patches))
+        raw = client.complete(CLASSIFY_SYSTEM, prompt)
+        _trace(trace, "classify", prompt, raw, on_step)
         classification = parse_classification(raw)
     except ParseError as exc:
         failure = f"unreadable answer ({exc})"
+        _trace(trace, "classify", prompt, failure, on_step)
     except LLMError as exc:
         failure = f"model unreachable ({exc})"
+        _trace(trace, "classify", prompt, failure, on_step)
 
     # SEAM 2: the confidence gate -----------------------------------------------
     # Retry when the answer was unusable OR when the model told us it was unsure.
@@ -142,24 +184,41 @@ def triage(
     # storing. Extensions that land here: a third tier, routing urgent items to
     # their own topic, escalating `security` regardless of score.
     needs_retry = classification is None or classification.confidence.score < threshold
+    score = classification.confidence.score if classification else None
+    _trace(
+        trace,
+        "gate",
+        f"score={score} threshold={threshold}",
+        "retry" if needs_retry else "keep",
+        on_step,
+    )
 
     if needs_retry:
-        low = classification.confidence.score if classification else None
+        low = score
         try:
             calls += 1
             raw = client.complete(
                 CLASSIFY_RETRY_SYSTEM,
-                classify_user(record, include_patches),
+                prompt,
                 max_tokens=400,
             )
+            _trace(trace, "retry", prompt, raw, on_step)
             retried = parse_classification(raw)
         except (ParseError, LLMError) as exc:
             reason = failure or f"low confidence {low} and retry failed"
+            _trace(trace, "retry", prompt, f"retry failed ({exc})", on_step)
             return _fallback(record, f"{reason}; retry also failed ({exc})", client.name, calls, started)
 
         # The retry parsed. If the model is STILL telling us it is unsure, we take
         # it at its word rather than storing a label neither of us believes.
         if retried.confidence.score < threshold:
+            _trace(
+                trace,
+                "gate",
+                f"retry score={retried.confidence.score} threshold={threshold}",
+                "fallback",
+                on_step,
+            )
             return _fallback(
                 record,
                 f"model unsure twice (best score {retried.confidence.score})",
@@ -175,7 +234,7 @@ def triage(
     # Counted even when the call returns nothing, llm_calls is how many
     # times we paid, not how many times we parsed. The UI shows this number.
     calls += 1
-    details = _extract_details(client, record, classification.evidence_files)
+    details = _extract_details(client, record, classification.evidence_files, trace, on_step)
 
     return TriageResult(
         category=classification.category,

@@ -98,7 +98,16 @@ class OllamaLLM(LLMClient):
             response.raise_for_status()
             return response.json()["message"]["content"]
         except (requests.RequestException, KeyError, ValueError) as exc:
-            raise LLMError(f"ollama call failed: {exc}") from exc
+            detail = ""
+            response = getattr(exc, "response", None)
+            if response is not None:
+                try:
+                    body = response.json()
+                    if isinstance(body, dict) and body.get("error"):
+                        detail = str(body["error"])
+                except ValueError:
+                    detail = ""
+            raise LLMError(f"ollama call failed: {detail or exc}") from exc
 
 
 class AnthropicLLM(LLMClient):
