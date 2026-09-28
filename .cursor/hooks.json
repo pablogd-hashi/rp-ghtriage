@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "hooks": {
+    "afterFileEdit": [
+      {
+        "command": "python3 .cursor/hooks/after_file_edit.py"
+      }
+    ],
+    "beforeShellExecution": [
+      {
+        "command": "python3 .cursor/hooks/guard_shell.py",
+        "failClosed": true
+      }
+    ],
+    "stop": [
+      {
+        "command": "python3 .cursor/hooks/require_gate.py",
+        "loop_limit": 3
+      }
+    ]
+  }
+}

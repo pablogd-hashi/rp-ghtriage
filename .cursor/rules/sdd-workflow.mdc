@@ -1,0 +1,26 @@
+---
+description: Spec-driven phase order. main is never the base.
+alwaysApply: true
+---
+
+# SDD workflow
+
+`main` is the demo. Never check it out, commit to it, push it, merge into it,
+rebase it, or reset it. Request branches are `sdd/factory-<key>`. The pull
+request base is always `sdd/factory`. Never merge.
+
+Each phase reads only the previous phase file and writes one file.
+
+1. `01-spec/spec.md` — `create-spec` (autonomous) or `request-to-spec` (manual)
+2. `02-plan/plan.md` — `spec-to-plan`
+3. `03-change/change.md` — `implement-change`
+4. `04-validation/gate.json` — `validate-change` runs `scripts/gate.py`
+5. `05-review/review.md` — `review-change`
+6. `06-pr/pr.md` — `open-github-pr`
+7. `07-ticket-update/update.md` — `ticket-update` (optional)
+
+Manual mode stops after each phase until the user says "approved".
+Autonomous mode (`01-spec/autonomous.json` present) runs 01 through 06
+without stopping. It still runs validation and review.
+
+Rules point at `AGENTS.md`. They do not restate the house rules.

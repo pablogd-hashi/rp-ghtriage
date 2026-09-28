@@ -6,6 +6,12 @@ or `dependency-bump`, adding on top of that a risk note a human can review and a
 
 Documentation site: **<https://pablogd-hashi.github.io/rp-ghtriage/>**
 
+## Spec-driven factory
+
+Changes on `sdd/factory` are folders under `requests/`.
+The pull request base is `sdd/factory`. `main` is the demo and stays untouched.
+The flow and the tradeoffs are in [docs/sdd.md](docs/sdd.md).
+
 ## Why this source
 
 The GitHub events feed hands you this for a new pull request:

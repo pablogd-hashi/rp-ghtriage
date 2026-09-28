@@ -1,0 +1,63 @@
+name: sdd
+
+on:
+  pull_request:
+    branches: [sdd/factory]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  sdd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch sdd/factory
+        run: git fetch origin sdd/factory:sdd/factory
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: pip install -r requirements.txt
+      - name: Validate and gate
+        id: gate
+        run: |
+          set -eu
+          # main is the demo. This job only runs for pull requests into sdd/factory.
+          KEY="${GITHUB_HEAD_REF#sdd/factory-}"
+          if [ "$KEY" = "$GITHUB_HEAD_REF" ]; then
+            echo "head branch must be sdd/factory-<key>, never a pull request from main"
+            exit 1
+          fi
+          shopt -s nullglob
+          matches=(requests/${KEY}-*)
+          if [ ${#matches[@]} -eq 0 ]; then
+            echo "no request folder for ${KEY}"
+            exit 1
+          fi
+          ID=$(basename "${matches[0]}")
+          python scripts/validate_request.py "$ID"
+          python scripts/gate.py "$ID"
+          echo "id=$ID" >> "$GITHUB_OUTPUT"
+      - name: Comment gate.json
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ID=$(ls -d requests/${GITHUB_HEAD_REF#sdd/factory-}-* | head -1 | xargs basename)
+          GATE="requests/${ID}/04-validation/gate.json"
+          if [ ! -f "$GATE" ]; then
+            echo "gate.json was not written"
+            exit 0
+          fi
+          {
+            echo "Gate result for ${ID}. Base is sdd/factory, never main."
+            echo
+            echo '```json'
+            cat "$GATE"
+            echo '```'
+          } > /tmp/gate-comment.md
+          gh pr comment "${{ github.event.pull_request.number }}" --body-file /tmp/gate-comment.md

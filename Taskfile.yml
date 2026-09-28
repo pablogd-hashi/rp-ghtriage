@@ -115,3 +115,48 @@ tasks:
     desc: 'Print one record from a topic, e.g. task consume -- pr.enriched (waits if the topic is empty; Ctrl-C to stop)'
     cmds:
       - docker compose exec -T redpanda rpk topic consume {{.CLI_ARGS}} -n 1 --brokers redpanda:9092
+
+  sdd:new:
+    desc: 'Copy requests/_template to requests/ID-SLUG. Base stays sdd/factory, never main.'
+    requires:
+      vars: [ID, SLUG]
+    cmds:
+      - |
+        dest="requests/{{.ID}}-{{.SLUG}}"
+        rm -rf "$dest"
+        cp -R requests/_template "$dest"
+        printf '%s\n' "{{.ID}}-{{.SLUG}}" > "$dest/id.txt"
+        echo "created $dest"
+
+  sdd:validate:
+    desc: 'Run scripts/validate_request.py. Refuses a base of main.'
+    requires:
+      vars: [ID]
+    cmds:
+      - python3 scripts/validate_request.py {{.ID}}
+
+  gate:
+    desc: 'Build the worker image and run scripts/gate.py. Base is sdd/factory, never main.'
+    requires:
+      vars: [ID]
+    cmds:
+      - docker compose build worker
+      - docker compose run --rm --no-deps -e LLM_PROVIDER=fake worker python scripts/gate.py {{.ID}}
+
+  sdd:status:
+    desc: 'Table of requests, their phase, gate result, and pull request'
+    cmds:
+      - python3 scripts/sdd_status.py
+
+  demo:
+    desc: 'Validate and gate RP-001. The pull request base is sdd/factory, never main.'
+    cmds:
+      - python3 scripts/validate_request.py RP-001-security-recall
+      - task: gate
+        vars:
+          ID: RP-001-security-recall
+
+  run-evals:
+    desc: 'Factory golden and broken fixtures. Good pull requests use base sdd/factory.'
+    cmds:
+      - python3 evals/factory/run.py

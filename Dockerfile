@@ -13,6 +13,7 @@ COPY tests/ ./tests/
 COPY evals/ ./evals/
 COPY fixtures/ ./fixtures/
 COPY scripts/ ./scripts/
+COPY requests/ ./requests/
 COPY worker.py web.py ./
 
 # Overridden per service in docker-compose.yml.

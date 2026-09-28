@@ -1,0 +1,23 @@
+---
+description: Fixed headings for request phase files
+globs: requests/**
+---
+
+# Spec format
+
+`main` is the demo. A request lives on `sdd/factory-<key>`. The pull request
+base is `sdd/factory`.
+
+`01-spec/spec.md` starts with `# <title>`, then `id:`, `seam: guard|gate|contract|eval|STOP`,
+`## Goal` (120 words or fewer), `## Acceptance` lines
+`- AC-1: <what> | proof: tests/<file>.py::<test>` or `| proof: gate:<metric>`,
+`## Out of scope`, and `status: draft|approved`.
+
+`02-plan/plan.md` has `spec:`, `## Files` in seam order, `## Map` lines
+`- AC-1: path, path`, and `## Fixtures` naming the FakeLLM case for each new branch.
+
+`05-review/review.md` first line is exactly `APPROVE` or `CHANGES`.
+`CHANGES` lists `- path: fix`.
+
+`06-pr/pr.md` has `base: sdd/factory`. `base: main` is a failed check.
+One fact per line so `scripts/validate_request.py` can parse the file.

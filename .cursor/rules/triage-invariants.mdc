@@ -1,0 +1,20 @@
+---
+description: Seams and house rules for triage and tests
+globs: triage/**,tests/**
+---
+
+# Triage invariants
+
+`main` is the demo. These rules apply on `sdd/factory` and on
+`sdd/factory-<key>`. The pull request base is `sdd/factory`. See `AGENTS.md`.
+
+A change is `guard` (`should_skip` before any model call), `gate` (the
+confidence branch: retry, fallback), `contract` (field order in `docs/sdd.md`),
+`eval` (`evals/`, `scripts/`, `tests/` only), or `STOP`.
+
+Every branch of the reasoning loop gets a FakeLLM test. Repair formatting,
+never meaning. `unclear` is written by the worker only. If it can be an `if`,
+it is code, not prompt text.
+
+`label_source` stays `model`, `model_retry`, `fallback`, `skipped`.
+Nothing under `connect/` sets a category.
