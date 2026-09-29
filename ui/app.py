@@ -28,16 +28,6 @@ AGENTS = {
     "model": "Model",
 }
 
-# Real code each step runs. Sliced from the file at render time.
-CODE = {
-    "guard": ("triage/reason.py", "def should_skip", "\n\ndef _skipped"),
-    "classify": ("triage/reason.py", "    # Attempt 1:", "    # SEAM 2"),
-    "gate": ("triage/reason.py", "    needs_retry = classification is None", "\n    if needs_retry:"),
-    "retry": ("triage/reason.py", "    if needs_retry:", "        classification = retried"),
-    "details": ("triage/reason.py", "def _extract_details", "\n\ndef triage"),
-    "model": ("triage/llm.py", "def get_client", "\nclass "),
-}
-
 TONE = {
     "security": "#ff5a4f",
     "feature": "#7eb6ff",
@@ -155,15 +145,15 @@ def inject_css() -> None:
         .pip { border: 1px solid rgba(243,239,230,0.16); border-radius: 999px; padding: 0.28rem 0.7rem; color: #6f6a62; letter-spacing: 0.08em; font-size: 0.72rem; text-transform: uppercase; }
         .pip.on { color: #f3efe6; border-color: rgba(243,239,230,0.45); }
         .pip.action { color: #ff5a4f; border-color: rgba(255,90,79,0.7); }
-        .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; margin: 0.5rem 0 0.8rem; max-width: 100%; }
-        .node { border: 1px solid rgba(243,239,230,0.18); border-radius: 8px; padding: 0.35rem 0.6rem; max-width: 12rem; }
-        .node.sel { border-color: #ff5a4f; }
-        .node .k { display: block; font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: #9a9488; }
-        .node .o { display: block; font-size: 0.92rem; overflow-wrap: anywhere; }
-        .arrow { color: #6f6a62; }
-        .io { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; max-width: 100%; }
-        .io .cap { color: #9a9488; font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; }
-        .io pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; background: #12161d; border-radius: 8px; padding: 0.7rem 0.8rem; font-size: 0.8rem; margin: 0.2rem 0 0; }
+        .path { max-width: 680px; margin: 0.2rem 0 0.4rem; }
+        .step { display: grid; grid-template-columns: 1.4rem 1fr; gap: 0.45rem 0.7rem; }
+        .stepno { color: #9a9488; padding-top: 0.1rem; }
+        .steptitle { font-size: 1.05rem; font-weight: 680; }
+        .job { color: #c8c2b6; margin: 0.12rem 0 0.35rem; overflow-wrap: anywhere; }
+        .branch { border-left: 3px solid #3a414c; margin: 0.18rem 0; padding: 0.22rem 0.6rem; color: #6f6a62; overflow-wrap: anywhere; }
+        .branch.took { border-left-color: #3dd68c; color: #f3efe6; background: rgba(61, 214, 140, 0.07); }
+        .thought { margin-top: 0.35rem; overflow-wrap: anywhere; }
+        .varrow { color: #6f6a62; padding: 0.15rem 0 0.15rem 0.15rem; line-height: 1; }
         .verdict { border: 1px solid rgba(243,239,230,0.1); border-left: 8px solid var(--tone); background: #12161d; padding: 1.15rem 1.3rem 1.2rem; margin: 0.8rem 0 1.6rem; max-width: 100%; }
         .verdict .kicker { letter-spacing: 0.22em; font-size: 0.72rem; color: #9a9488; }
         .verdict .word { font-size: 3rem; font-weight: 740; letter-spacing: 0.03em; line-height: 1.05; margin: 0.2rem 0 0.45rem; color: var(--tone); }
@@ -201,6 +191,101 @@ def parsed_model(text: str) -> dict | None:
     return data if isinstance(data, dict) else None
 
 
+def one_sentence(text: str, limit: int = 160) -> str:
+    text = " ".join((text or "").split())
+    if len(text) <= limit:
+        return text
+    cut = text[:limit].rsplit(" ", 1)[0]
+    return (cut or text[:limit]) + "…"
+
+
+def gate_facts(step: dict) -> tuple[str | None, str]:
+    text = step.get("input") or ""
+    threshold = "0.65"
+    found = text.split("threshold=")
+    if len(found) > 1:
+        threshold = found[1].split()[0]
+    if "score=None" in text:
+        return None, threshold
+    score = None
+    for part in text.replace("retry ", "").split():
+        if part.startswith("score="):
+            score = part.split("=", 1)[1]
+    return score, threshold
+
+
+def model_bits(step: dict) -> tuple[dict | None, str, str]:
+    data = parsed_model(step.get("output") or "")
+    if not data:
+        return None, "", ""
+    confidence = data.get("confidence") if isinstance(data.get("confidence"), dict) else {}
+    category = str(data.get("category") or "")
+    score = confidence.get("score", "")
+    thought = one_sentence(str(confidence.get("rationale") or ""))
+    return data, f"{category} at {score}".strip(), thought
+
+
+def explain(step: dict) -> tuple[str, str, list[tuple[str, str]]]:
+    """Job sentence, the model's thought, and if/then lines. 'took' is the branch used."""
+    name = step.get("step") or ""
+    out = (step.get("output") or "").strip()
+    if name == "guard":
+        job = "Runs before any model call. Drafts and empty diffs are not worth one."
+        if out == "proceed":
+            return job, "", [
+                ("dim", "if draft, no files, or nothing to read → skip"),
+                ("took", "else → ask the model"),
+            ]
+        return job, "", [
+            ("took", f"if {out} → skip"),
+            ("dim", "else → ask the model"),
+        ]
+    if name == "classify":
+        job = "The model reads the title and the diff, then picks one label."
+        _data, result, thought = model_bits(step)
+        if not result:
+            return job, "", [("took", "the answer did not parse → the gate will ask again")]
+        return job, thought, [("took", result)]
+    if name == "gate":
+        job = "A label is stored only when the score clears 0.65."
+        score, threshold = gate_facts(step)
+        shown = score if score is not None else "no score"
+        if out == "keep":
+            return job, "", [
+                ("dim", f"if missing or below {threshold} → ask again"),
+                ("took", f"{shown} ≥ {threshold} → keep this label"),
+            ]
+        if out == "fallback":
+            return job, "", [
+                ("took", f"second score {shown} is still below {threshold} → store unclear"),
+                ("dim", f"if the second score ≥ {threshold} → keep it"),
+            ]
+        if score is None:
+            took = "no score → ask again"
+        else:
+            took = f"{shown} < {threshold} → ask again"
+        return job, "", [
+            ("took", took),
+            ("dim", f"if the score ≥ {threshold} → keep it"),
+        ]
+    if name == "retry":
+        job = "Same diff, stricter prompt. This is the second and last try."
+        _data, result, thought = model_bits(step)
+        if not result:
+            return job, "", [("took", "the second answer did not parse → store unclear")]
+        return job, thought, [("took", result)]
+    if name == "details":
+        job = "The label is already chosen. This call only adds the area and one risk."
+        data = parsed_model(out)
+        if not data:
+            return job, "", [("took", "no note came back → the label still stands")]
+        area = str(data.get("affected_area") or "").strip()
+        thought = one_sentence(str(data.get("risk_note") or ""))
+        line = f"area: {area}" if area else "area not named"
+        return job, thought, [("took", line)]
+    return "The model was not asked.", "", [("took", one_sentence(out, 120) or "no model")]
+
+
 def short_outcome(step: dict) -> str:
     name = step.get("step") or ""
     out = (step.get("output") or "").strip()
@@ -220,20 +305,6 @@ def short_outcome(step: dict) -> str:
             return "no note" if not out.startswith("details call failed") else "failed"
         return str(data.get("affected_area") or "note")
     return out[:48]
-
-
-def code_for(step_name: str) -> tuple[str, str]:
-    rel, start, end = CODE.get(step_name, CODE["guard"])
-    text = (ROOT / rel).read_text()
-    begin = text.find(start)
-    if begin < 0:
-        return rel, ""
-    stop = text.find(end, begin + len(start))
-    body = text[begin:stop if stop > begin else begin + 700]
-    lines = body.strip("\n").splitlines()
-    if len(lines) > 22:
-        lines = lines[:22] + ["    ..."]
-    return rel, "\n".join(lines)
 
 
 def action_of(result) -> tuple[str, str, str, str]:
@@ -400,35 +471,30 @@ def ledger(account: dict) -> None:
         st.caption(f"Waiting for a later click: {waiting}")
 
 
-def flow(trace: list[dict], selected: int) -> None:
-    parts = []
-    for index, step in enumerate(trace):
-        if index:
-            parts.append('<span class="arrow">→</span>')
+def decision_path(trace: list[dict]) -> None:
+    blocks = []
+    for index, step in enumerate(trace, start=1):
+        if index > 1:
+            blocks.append('<div class="varrow">↓</div>')
+        job, thought, branches = explain(step)
         title = AGENTS.get(step["step"], step["step"])
-        state = "sel" if index == selected else ""
-        parts.append(
-            f'<span class="node {state}"><span class="k">{esc(title)}</span>'
-            f'<span class="o">{esc(short_outcome(step))}</span></span>'
+        branch_html = "".join(
+            f'<div class="branch {state}">{esc(line)}</div>' for state, line in branches
         )
-    show(f'<div class="flow">{"".join(parts)}</div>')
+        thought_html = f'<div class="thought">{esc(thought)}</div>' if thought else ""
+        blocks.append(
+            '<div class="step">'
+            f'<div class="stepno">{index}</div>'
+            '<div class="stepbody">'
+            f'<div class="steptitle">{esc(title)}</div>'
+            f'<div class="job">{esc(job)}</div>'
+            f"{branch_html}{thought_html}"
+            "</div></div>"
+        )
+    show(f'<div class="path">{"".join(blocks)}</div>')
 
 
-def show_step(step: dict) -> None:
-    rel, code = code_for(step["step"])
-    st.caption(rel)
-    st.code(code or "# source not found", language="python")
-    show(
-        '<div class="io">'
-        '<div><div class="cap">Given</div>'
-        f'<pre>{esc(step.get("input") or "")}</pre></div>'
-        '<div><div class="cap">Returned</div>'
-        f'<pre>{esc(step.get("output") or "")}</pre></div>'
-        "</div>"
-    )
-
-
-def judgement(index: int, item: dict) -> None:
+def judgement(_index: int, item: dict) -> None:
     record = item["record"]
     result = item["result"]
     repo = f"{record.get('repo') or 'unknown'} #{record.get('pr_number') or '?'}"
@@ -443,31 +509,14 @@ def judgement(index: int, item: dict) -> None:
     )
     if record.get("html_url"):
         st.markdown(record["html_url"])
-    trace = item["trace"]
-    labels = [
-        f"{number} {AGENTS.get(step['step'], step['step'])} · {short_outcome(step)}"
-        for number, step in enumerate(trace, start=1)
-    ]
-    if not labels:
-        word, why, tone, meta = action_of(result)
-        verdict(word, why, tone, meta)
-        return
-    pick = st.radio(
-        "Step",
-        labels,
-        horizontal=True,
-        key=f"step-{index}-{record.get('pr_url')}",
-        label_visibility="collapsed",
-    )
-    selected = labels.index(pick)
-    flow(trace, selected)
-    show_step(trace[selected])
+    if item["trace"]:
+        decision_path(item["trace"])
     word, why, tone, meta = action_of(result)
     verdict(word, why, tone, meta)
 
 
 def empty_stage() -> None:
-    show('<div class="story">Fetch one page of GitHub events. Dropped pull requests are counted. Each step that runs shows its code, its input, and its output.</div>')
+    show('<div class="story">Fetch one page of GitHub events. Each judged pull request shows the branch it took, and why.</div>')
     columns = st.columns(4)
     stages = [
         ("01", "Firehose", "One hundred public events."),
