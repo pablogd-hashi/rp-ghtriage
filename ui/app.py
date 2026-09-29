@@ -20,12 +20,22 @@ from triage.reason import triage
 ROOT = Path(__file__).resolve().parents[1]
 
 AGENTS = {
-    "guard": ("Guard", "Runs before any model call."),
-    "classify": ("Classifier", "Reads the diff and names the change."),
-    "gate": ("Gate", "Keeps the answer, or sends it back."),
-    "retry": ("Classifier, second pass", "A stricter reading of the same diff."),
-    "details": ("Details", "Writes where the change lands, after the label is trusted."),
-    "model": ("Model", "The model was not asked."),
+    "guard": "Guard",
+    "classify": "Classifier",
+    "gate": "Gate",
+    "retry": "Retry",
+    "details": "Details",
+    "model": "Model",
+}
+
+# Real code each step runs. Sliced from the file at render time.
+CODE = {
+    "guard": ("triage/reason.py", "def should_skip", "\n\ndef _skipped"),
+    "classify": ("triage/reason.py", "    # Attempt 1:", "    # SEAM 2"),
+    "gate": ("triage/reason.py", "    needs_retry = classification is None", "\n    if needs_retry:"),
+    "retry": ("triage/reason.py", "    if needs_retry:", "        classification = retried"),
+    "details": ("triage/reason.py", "def _extract_details", "\n\ndef triage"),
+    "model": ("triage/llm.py", "def get_client", "\nclass "),
 }
 
 TONE = {
@@ -145,13 +155,21 @@ def inject_css() -> None:
         .pip { border: 1px solid rgba(243,239,230,0.16); border-radius: 999px; padding: 0.28rem 0.7rem; color: #6f6a62; letter-spacing: 0.08em; font-size: 0.72rem; text-transform: uppercase; }
         .pip.on { color: #f3efe6; border-color: rgba(243,239,230,0.45); }
         .pip.action { color: #ff5a4f; border-color: rgba(255,90,79,0.7); }
-        .agent-kicker { letter-spacing: 0.16em; text-transform: uppercase; font-size: 0.72rem; color: #9a9488; }
-        .agent-name { font-size: 1.35rem; font-weight: 680; margin: 0.1rem 0; }
-        .agent-decision { font-size: 1.15rem; line-height: 1.4; }
-        .verdict { border: 1px solid rgba(243,239,230,0.1); border-left: 8px solid var(--tone); background: #12161d; padding: 1.15rem 1.3rem 1.2rem; margin: 0.8rem 0 1.6rem; }
+        .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; margin: 0.5rem 0 0.8rem; max-width: 100%; }
+        .node { border: 1px solid rgba(243,239,230,0.18); border-radius: 8px; padding: 0.35rem 0.6rem; max-width: 12rem; }
+        .node.sel { border-color: #ff5a4f; }
+        .node .k { display: block; font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: #9a9488; }
+        .node .o { display: block; font-size: 0.92rem; overflow-wrap: anywhere; }
+        .arrow { color: #6f6a62; }
+        .io { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; max-width: 100%; }
+        .io .cap { color: #9a9488; font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; }
+        .io pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; background: #12161d; border-radius: 8px; padding: 0.7rem 0.8rem; font-size: 0.8rem; margin: 0.2rem 0 0; }
+        .verdict { border: 1px solid rgba(243,239,230,0.1); border-left: 8px solid var(--tone); background: #12161d; padding: 1.15rem 1.3rem 1.2rem; margin: 0.8rem 0 1.6rem; max-width: 100%; }
         .verdict .kicker { letter-spacing: 0.22em; font-size: 0.72rem; color: #9a9488; }
         .verdict .word { font-size: 3rem; font-weight: 740; letter-spacing: 0.03em; line-height: 1.05; margin: 0.2rem 0 0.45rem; color: var(--tone); }
-        .verdict .because { color: #f3efe6; font-size: 1.02rem; font-weight: 400; line-height: 1.45; }
+        .verdict .because { color: #f3efe6; font-size: 1.02rem; font-weight: 400; line-height: 1.45; overflow-wrap: anywhere; }
+        .verdict .meta { color: #9a9488; margin-bottom: 0.35rem; }
+        @media (max-width: 800px) { .io { grid-template-columns: 1fr; } }
         .prhead { margin-bottom: 0.2rem; }
         .prhead .repo { font-size: 1.7rem; font-weight: 700; }
         .prhead .title { font-size: 1.15rem; color: #f3efe6; }
@@ -183,65 +201,62 @@ def parsed_model(text: str) -> dict | None:
     return data if isinstance(data, dict) else None
 
 
-def decision(step: dict) -> str:
+def short_outcome(step: dict) -> str:
     name = step.get("step") or ""
-    out = step.get("output") or ""
+    out = (step.get("output") or "").strip()
     if name == "guard":
-        if out == "proceed":
-            return "Proceed. This pull request is worth a model call."
-        return f"Stop. {out}."
+        return "proceed" if out == "proceed" else out
     if name == "gate":
-        if out == "keep":
-            return "Keep the first answer. The score clears the bar."
-        if out == "retry":
-            return "Send it back. The first answer was too weak to store."
-        if out == "fallback":
-            return "Stop. The second answer is still too weak to store."
-        return out
-    if name in {"classify", "retry", "details"}:
+        return out or "gate"
+    if name in {"classify", "retry"}:
         data = parsed_model(out)
-        if data and name != "details":
-            confidence = data.get("confidence") if isinstance(data.get("confidence"), dict) else {}
-            score = confidence.get("score", "")
-            why = confidence.get("rationale") or ""
-            return f"{data.get('category', '')} at {score}. {why}".strip()
-        if data and name == "details":
-            area = data.get("affected_area") or ""
-            note = data.get("risk_note") or ""
-            text = ". ".join(part for part in (str(area), str(note)) if part)
-            return text or "No extra note."
-        return out
-    return out
+        if not data:
+            return "unparsed"
+        confidence = data.get("confidence") if isinstance(data.get("confidence"), dict) else {}
+        return f"{data.get('category', '')} {confidence.get('score', '')}".strip()
+    if name == "details":
+        data = parsed_model(out)
+        if not data:
+            return "no note" if not out.startswith("details call failed") else "failed"
+        return str(data.get("affected_area") or "note")
+    return out[:48]
 
 
-def action_of(result) -> tuple[str, str, str]:
+def code_for(step_name: str) -> tuple[str, str]:
+    rel, start, end = CODE.get(step_name, CODE["guard"])
+    text = (ROOT / rel).read_text()
+    begin = text.find(start)
+    if begin < 0:
+        return rel, ""
+    stop = text.find(end, begin + len(start))
+    body = text[begin:stop if stop > begin else begin + 700]
+    lines = body.strip("\n").splitlines()
+    if len(lines) > 22:
+        lines = lines[:22] + ["    ..."]
+    return rel, "\n".join(lines)
+
+
+def action_of(result) -> tuple[str, str, str, str]:
     if result is None:
-        return "NOT JUDGED", "The agents did not finish a label.", "muted"
+        return "NOT JUDGED", "No label was stored.", "muted", ""
     source = result.label_source.value
+    meta = f"{source} · {result.llm_calls} model calls"
     if source == "skipped":
-        return "SKIPPED", result.rationale, "skipped"
+        return "SKIPPED", result.rationale, "skipped", meta
     if source == "fallback":
-        return "UNCLEAR", result.rationale, "unclear"
-    tone = result.category.value
-    bits = [
-        result.rationale,
-        f"confidence {result.confidence}",
-        source,
-        f"{result.llm_calls} model calls",
-    ]
-    if result.risk_note:
-        bits.append(result.risk_note)
-    if result.affected_area:
-        bits.append(result.affected_area)
-    return result.category.value.upper(), " · ".join(bit for bit in bits if bit), tone
+        return "UNCLEAR", result.rationale, "unclear", meta
+    meta = f"confidence {result.confidence} · {meta}"
+    return result.category.value.upper(), result.rationale, result.category.value, meta
 
 
-def verdict(word: str, why: str, tone: str) -> None:
+def verdict(word: str, why: str, tone: str, meta: str = "") -> None:
     color = TONE.get(tone, TONE["muted"])
+    meta_html = f'<div class="meta">{esc(meta)}</div>' if meta else ""
     show(
         f'<div class="verdict" style="--tone:{color}">'
         f'<div class="kicker">Action</div>'
         f'<div class="word">{esc(word)}</div>'
+        f"{meta_html}"
         f'<div class="because">{esc(why)}</div>'
         f"</div>"
     )
@@ -385,33 +400,32 @@ def ledger(account: dict) -> None:
         st.caption(f"Waiting for a later click: {waiting}")
 
 
-def rail(trace: list[dict]) -> None:
-    present = [step["step"] for step in trace]
-    order = [("guard", "Guard"), ("classify", "Classifier"), ("gate", "Gate"), ("details", "Details")]
-    pips = []
-    for key, label in order:
-        if key == "classify" and "retry" in present:
-            label = "Classifier ×2"
-        state = "on" if key in present else "off"
-        pips.append(f'<span class="pip {state}">{label}</span>')
-    pips.append('<span class="pip action">Action</span>')
-    show('<div class="rail">' + "".join(pips) + "</div>")
+def flow(trace: list[dict], selected: int) -> None:
+    parts = []
+    for index, step in enumerate(trace):
+        if index:
+            parts.append('<span class="arrow">→</span>')
+        title = AGENTS.get(step["step"], step["step"])
+        state = "sel" if index == selected else ""
+        parts.append(
+            f'<span class="node {state}"><span class="k">{esc(title)}</span>'
+            f'<span class="o">{esc(short_outcome(step))}</span></span>'
+        )
+    show(f'<div class="flow">{"".join(parts)}</div>')
 
 
-def agent_card(prefix: str, index: int, step: dict) -> None:
-    title, blurb = AGENTS.get(step["step"], (step["step"], ""))
-    left, right = st.columns([1, 2])
-    left.markdown(
-        f'<div class="agent-kicker">Agent {index + 1:02d}</div>'
-        f'<div class="agent-name">{esc(title)}</div>'
-        f'<div class="note" style="color:#9a9488">{esc(blurb)}</div>',
-        unsafe_allow_html=True,
+def show_step(step: dict) -> None:
+    rel, code = code_for(step["step"])
+    st.caption(rel)
+    st.code(code or "# source not found", language="python")
+    show(
+        '<div class="io">'
+        '<div><div class="cap">Given</div>'
+        f'<pre>{esc(step.get("input") or "")}</pre></div>'
+        '<div><div class="cap">Returned</div>'
+        f'<pre>{esc(step.get("output") or "")}</pre></div>'
+        "</div>"
     )
-    right.markdown(f'<div class="agent-decision">{esc(decision(step))}</div>', unsafe_allow_html=True)
-    given, returned = st.columns(2)
-    given.text_area("Given", step.get("input") or "", height=150, disabled=True, key=f"{prefix}-in-{index}")
-    returned.text_area("Returned", step.get("output") or "", height=150, disabled=True, key=f"{prefix}-out-{index}")
-    st.divider()
 
 
 def judgement(index: int, item: dict) -> None:
@@ -429,15 +443,31 @@ def judgement(index: int, item: dict) -> None:
     )
     if record.get("html_url"):
         st.markdown(record["html_url"])
-    rail(item["trace"])
-    for step_index, step in enumerate(item["trace"]):
-        agent_card(f"pr{index}", step_index, step)
-    word, why, tone = action_of(result)
-    verdict(word, why, tone)
+    trace = item["trace"]
+    labels = [
+        f"{number} {AGENTS.get(step['step'], step['step'])} · {short_outcome(step)}"
+        for number, step in enumerate(trace, start=1)
+    ]
+    if not labels:
+        word, why, tone, meta = action_of(result)
+        verdict(word, why, tone, meta)
+        return
+    pick = st.radio(
+        "Step",
+        labels,
+        horizontal=True,
+        key=f"step-{index}-{record.get('pr_url')}",
+        label_visibility="collapsed",
+    )
+    selected = labels.index(pick)
+    flow(trace, selected)
+    show_step(trace[selected])
+    word, why, tone, meta = action_of(result)
+    verdict(word, why, tone, meta)
 
 
 def empty_stage() -> None:
-    show('<div class="story">One click reads a page of GitHub. The page then shows what was dropped, what each agent did, and the action at the end.</div>')
+    show('<div class="story">Fetch one page of GitHub events. Dropped pull requests are counted. Each step that runs shows its code, its input, and its output.</div>')
     columns = st.columns(4)
     stages = [
         ("01", "Firehose", "One hundred public events."),
@@ -510,8 +540,8 @@ def run() -> None:
                 trace: list[dict] = []
 
                 def watch(step: dict, _name: str = name) -> None:
-                    title, _blurb = AGENTS.get(step["step"], (step["step"], ""))
-                    status.write(f"{_name} · {title} — {decision(step)}")
+                    title = AGENTS.get(step["step"], step["step"])
+                    status.write(f"{_name} · {title} · {short_outcome(step)}")
 
                 if client is None or problem:
                     result = None
@@ -523,7 +553,7 @@ def run() -> None:
                     watch(trace[-1])
                 else:
                     result = triage(record, client, trace=trace, on_step=watch)
-                word, _why, _tone = action_of(result)
+                word, _why, _tone, _meta = action_of(result)
                 status.write(f"{name} · Action — {word}")
                 pull_requests.append({"record": record, "trace": trace, "result": result})
             st.session_state["run"] = {
