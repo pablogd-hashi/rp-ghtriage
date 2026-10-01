@@ -6,6 +6,7 @@ once without, and prints the two side by side. See evals/README.md for why.
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import pathlib
@@ -26,14 +27,23 @@ def load():
     return records, labels
 
 
+def security_recall(labels, predicted: dict[str, str]) -> tuple[int, int]:
+    """Of the fixtures labelled security, how many this run also called security."""
+    subset = [item for item in labels if item["label"] == "security"]
+    hits = sum(1 for item in subset if predicted.get(item["event_id"]) == "security")
+    return hits, len(subset)
+
+
 def run(records, labels, client, include_patches: bool):
     hits, fallbacks, skips, calls = 0, 0, 0, 0
     misses = []
+    predicted = {}
 
     for item in labels:
         record = records[item["event_id"]]
         result = triage(record, client, THRESHOLD, include_patches=include_patches)
         calls += result.llm_calls
+        predicted[item["event_id"]] = result.category.value
 
         if result.label_source.value == "fallback":
             fallbacks += 1
@@ -46,14 +56,66 @@ def run(records, labels, client, include_patches: bool):
             misses.append((item["event_id"], item["label"], result.category.value,
                            record.get("title", "")))
 
+    sec_hits, sec_total = security_recall(labels, predicted)
     return {
         "hits": hits, "total": len(labels), "fallbacks": fallbacks,
         "skips": skips, "calls": calls, "misses": misses,
+        "security_hits": sec_hits, "security_total": sec_total,
     }
 
 
-def main() -> int:
+def recorded_predictions() -> dict[str, dict]:
+    """Saved rows keyed by fixture id. No model call."""
+    enriched = json.loads((ROOT / "fixtures/enriched.json").read_text())
+    triaged = json.loads((ROOT / "fixtures/triaged.json").read_text())
+    by_title = {row["title"]: row for row in triaged}
+    return {rec["event_id"]: by_title[rec["title"]] for rec in enriched}
+
+
+def gate_metrics(labels) -> dict:
+    """Numbers scripts/gate.py reads. Recorded rows only, so there is no live model."""
+    predicted_rows = recorded_predictions()
+    predicted = {eid: row["category"] for eid, row in predicted_rows.items()}
+    hits = sum(1 for item in labels if predicted.get(item["event_id"]) == item["label"])
+    sec_hits, sec_total = security_recall(labels, predicted)
+    total = len(labels)
+    return {
+        "accuracy_full": round(hits / total, 4) if total else None,
+        "security_recall": round(sec_hits / sec_total, 4) if sec_total else None,
+        "security_hits": sec_hits,
+        "security_total": sec_total,
+        "hits": hits,
+        "total": total,
+    }
+
+
+def print_summary(full: dict, ablated: dict) -> None:
+    print(f"{'run':<10}{'correct':>10}{'sec recall':>12}{'fallbacks':>12}{'skipped':>10}{'llm calls':>12}")
+    print("-" * 66)
+    for name, row in (("full", full), ("ablated", ablated)):
+        print(
+            f"{name:<10}{row['hits']:>5}/{row['total']:<4}"
+            f"{row['security_hits']:>6}/{row['security_total']:<5}"
+            f"{row['fallbacks']:>12}{row['skips']:>10}{row['calls']:>12}"
+        )
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--gate", action="store_true")
+    args = parser.parse_args(argv)
     records, labels = load()
+    if args.gate:
+        metrics = gate_metrics(labels)
+        print(
+            f"recorded security recall: {metrics['security_hits']}/{metrics['security_total']}"
+        )
+        print("GATE_JSON " + json.dumps({
+            "accuracy_full": metrics["accuracy_full"],
+            "security_recall": metrics["security_recall"],
+        }))
+        return 0
+
     client = get_client()
     print(f"model: {client.name}   threshold: {THRESHOLD}   fixtures: {len(labels)}\n")
 
@@ -62,11 +124,7 @@ def main() -> int:
     print("running ABLATED (title + metadata only)...\n", flush=True)
     ablated = run(records, labels, client, include_patches=False)
 
-    print(f"{'run':<10}{'correct':>10}{'fallbacks':>12}{'skipped':>10}{'llm calls':>12}")
-    print("-" * 54)
-    for name, r in (("full", full), ("ablated", ablated)):
-        print(f"{name:<10}{r['hits']:>5}/{r['total']:<4}{r['fallbacks']:>12}"
-              f"{r['skips']:>10}{r['calls']:>12}")
+    print_summary(full, ablated)
 
     delta = full["hits"] - ablated["hits"]
     print(f"\ndifference: {delta:+d} correct when the model can read the diff")
