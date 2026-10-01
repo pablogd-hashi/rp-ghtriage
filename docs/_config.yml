@@ -25,3 +25,4 @@ exclude:
   - seam-map.md
   - demo-runbook.md
   - study-guide.md
+  - assets/diagrams/build.py
