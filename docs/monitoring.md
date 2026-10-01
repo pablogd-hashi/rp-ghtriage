@@ -19,8 +19,9 @@ taken from Redpanda's published dashboard rather than built from scratch.
 |---|---|---|
 | Consumer lag on `pr-triage-worker` | Redpanda metrics | The model is slower than Connect, or the worker is down. The backlog grows |
 | Depth of `pr.dlq` | Redpanda metrics | Records are being rejected by enrichment or by the worker |
-| Rows by `label_source`, per hour | Postgres | A rising `fallback` share means the model is degrading or unreachable |
-| Model latency per call, p50 and p95 | Postgres | The number that decides how many workers you need |
+| Share of PRs by `label_source` | Postgres | A rising `fallback` share means the model is degrading or unreachable |
+| Time per PR, p95, by `label_source` | Postgres | The number that decides how many workers you need |
+| Why it fell back | Postgres | Tells a model host problem apart from a prompt problem |
 | Under-replicated partitions, leader changes, disk | Redpanda metrics | Broker health, and the first three things to watch on a real cluster |
 
 ## The two alerts
@@ -48,11 +49,42 @@ echo '{"test":1}' | docker compose exec -T redpanda rpk topic produce pr.dlq
 
 ## The two dashboards
 
-**`PR Triage`** holds the two application panels, both built from SQL against the
-`pr_triage` table rather than from any metric the worker emits. One shows rows by
-`label_source` per hour, so a rising `fallback` share is visible as it happens, and the
-other shows model latency per call at p50 and p95, dividing `latency_ms` by `llm_calls`
-since a row covers two or three calls.
+**`PR Triage`** is built for one question: is triage keeping up, and are the answers
+healthy. It reads in rows, top to bottom.
+
+- **Now.** Seven numbers: PRs triaged, fallback share, retry share, p95 time per PR,
+  time since the last row, worker lag, and new DLQ records. The last two use the same
+  expressions as the two alerts, so the dashboard shows what pages you.
+- **Pipeline.** Lag and DLQ over time, with the alert thresholds drawn on, next to the
+  fallback share. Lag climbing while time per PR stays flat means the worker is down or
+  waiting, not slow.
+- **Model.** How each PR got its label, as a share of each hour, with fixed colours:
+  red for `fallback`, amber for `model_retry`. Next to it, time per PR at p95, one line
+  per `label_source`.
+- **Answers.** The confidence of kept answers against the 0.65 gate, the category mix,
+  the delay from PR opened to triaged, and how often the details call comes back empty.
+- **Fallbacks.** Fallbacks grouped by what went wrong, and the latest 50 with their
+  reason and a link to the PR.
+
+A `model` picker at the top filters every Postgres panel, so two models can be compared.
+
+Three choices are worth explaining:
+
+- **Share, not counts.** GitHub polls come in bursts, so a count goes up and down with
+  volume. The share doesn't. Ratio panels leave out buckets with fewer than five PRs,
+  because one fallback out of two rows would read as 50%.
+- **Time per PR, not per call.** The earlier panel divided `latency_ms` by `llm_calls`.
+  That averaged three different calls (classify, retry, details) and hid what a retry
+  costs. Workers needed is roughly PRs per second times time per PR, so time per PR is
+  the number that matters.
+- **The details call gets its own panel.** It is best-effort and fails silently by
+  design, so nothing else on the stack would show it breaking.
+
+One limit applies to every Postgres panel. The upsert resets `triaged_at` when a PR is
+reprocessed, so a row only counts in the hour of its last write. A fallback that a later
+run fixed disappears from the history. Fixing that needs an append-only events table,
+or a counter the worker exports. Both are schema or code changes, so they're left out
+of this one.
 
 **`Redpanda Ops Dashboard`** is the one Redpanda publishes in
 [redpanda-data/observability](https://github.com/redpanda-data/observability), used

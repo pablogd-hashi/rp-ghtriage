@@ -235,8 +235,9 @@ GitHub /events ──▶ Connect ──▶ topic pr.enriched ──▶ worker �
 |---|---|---|
 | Consumer lag on `pr-triage-worker` | Redpanda metrics | The model is slower than Connect, or the worker is down. Backlog grows |
 | Depth of `pr.dlq` | Redpanda metrics | Records are being rejected by enrichment or the worker |
-| Rows by `label_source`, per hour | Postgres | A rising `fallback` share means the model is degrading or unreachable |
-| Model latency per call, p50 and p95 | Postgres | The number that decides how many workers you need |
+| Share of PRs by `label_source` | Postgres | A rising `fallback` share means the model is degrading or unreachable |
+| Time per PR, p95, by `label_source` | Postgres | The number that decides how many workers you need |
+| Why it fell back | Postgres | Tells a model host problem apart from a prompt problem |
 | Under-replicated partitions, leader changes, disk | Redpanda metrics | Broker health. The first three things to watch on a real cluster |
 
 **Two alerts** live in `monitoring/alerts.yml`, one for lag above 20 sustained for 5
@@ -250,8 +251,8 @@ docker compose start worker
 echo '{"test":1}' | docker compose exec -T redpanda rpk topic produce pr.dlq   # DLQ alert
 ```
 
-**Two dashboards** in Grafana. `PR Triage` holds the two application panels above, built
-from SQL against `pr_triage`, while `Redpanda Ops Dashboard` is the one Redpanda
+**Two dashboards** in Grafana. `PR Triage` shows the alert numbers next to the application
+panels above, built from SQL against `pr_triage` (see `docs/monitoring.md`), while `Redpanda Ops Dashboard` is the one Redpanda
 publishes in [redpanda-data/observability](https://github.com/redpanda-data/observability),
 used as-is without a single edit. On this single-node stack the under-replicated and
 leader-change panels read zero and one respectively, which is correct, and disk is the

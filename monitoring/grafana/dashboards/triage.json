@@ -1,8 +1,10 @@
 {
  "uid": "pr-triage",
  "title": "PR Triage",
+ "description": "Is the triage pipeline keeping up, and are the model's answers healthy. Stats and Pipeline match the two alerts; Model and Answers are built from SQL on pr_triage.",
  "schemaVersion": 39,
- "version": 1,
+ "version": 2,
+ "editable": true,
  "time": {
   "from": "now-24h",
   "to": "now"
@@ -11,21 +13,75 @@
  "tags": [
   "pr-triage"
  ],
+ "templating": {
+  "list": [
+   {
+    "name": "model",
+    "label": "Model",
+    "type": "query",
+    "datasource": {
+     "type": "postgres",
+     "uid": "pg"
+    },
+    "query": "SELECT DISTINCT model FROM pr_triage WHERE model IS NOT NULL ORDER BY 1",
+    "definition": "SELECT DISTINCT model FROM pr_triage WHERE model IS NOT NULL ORDER BY 1",
+    "refresh": 2,
+    "multi": true,
+    "includeAll": true,
+    "allValue": "'__all'",
+    "current": {
+     "selected": true,
+     "text": [
+      "All"
+     ],
+     "value": [
+      "$__all"
+     ]
+    },
+    "sort": 1
+   }
+  ]
+ },
+ "annotations": {
+  "list": []
+ },
+ "links": [
+  {
+   "title": "Redpanda Ops",
+   "type": "link",
+   "url": "/d/FejE4c6nz",
+   "icon": "dashboard",
+   "targetBlank": false
+  }
+ ],
  "panels": [
   {
    "id": 1,
-   "type": "timeseries",
-   "title": "Rows by label_source, per hour",
-   "description": "How each pull request got its label. A rising fallback share means the model is degrading or unreachable. A rising model_retry share means its output is getting messier.",
+   "type": "row",
+   "title": "Now",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 0
+   },
+   "panels": []
+  },
+  {
+   "id": 2,
+   "type": "stat",
+   "title": "PRs triaged",
+   "description": "Rows written in the time range. Includes skipped rows.",
    "datasource": {
     "type": "postgres",
     "uid": "pg"
    },
    "gridPos": {
-    "h": 10,
-    "w": 24,
+    "h": 4,
+    "w": 3,
     "x": 0,
-    "y": 0
+    "y": 1
    },
    "targets": [
     {
@@ -35,7 +91,765 @@
       "uid": "pg"
      },
      "rawQuery": true,
-     "rawSql": "SELECT\n  date_trunc('hour', triaged_at) AS time,\n  label_source AS metric,\n  count(*)::int AS value\nFROM pr_triage\nWHERE $__timeFilter(triaged_at)\nGROUP BY 1, 2\nORDER BY 1",
+     "editorMode": "code",
+     "rawSql": "SELECT count(*) AS value\nFROM pr_triage\nWHERE $__timeFilter(triaged_at) AND ('__all' IN ($model) OR model IN ($model))",
+     "format": "table"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "blue",
+        "value": null
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "center",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 3,
+   "type": "stat",
+   "title": "Fallback share",
+   "description": "Share of PRs we asked the model about that ended as fallback (forced to unclear). Skipped rows are left out, since the model never saw them. Amber at 5%, red at 15%: a starting point, not a measured SLO.",
+   "datasource": {
+    "type": "postgres",
+    "uid": "pg"
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 3,
+    "y": 1
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "postgres",
+      "uid": "pg"
+     },
+     "rawQuery": true,
+     "editorMode": "code",
+     "rawSql": "SELECT 100.0 * count(*) FILTER (WHERE label_source = 'fallback')\n       / NULLIF(count(*) FILTER (WHERE label_source <> 'skipped'), 0) AS value\nFROM pr_triage\nWHERE $__timeFilter(triaged_at) AND ('__all' IN ($model) OR model IN ($model))",
+     "format": "table"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 5
+       },
+       {
+        "color": "red",
+        "value": 15
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     },
+     "decimals": 1
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "center",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 4,
+   "type": "stat",
+   "title": "Retry share",
+   "description": "Share of model-asked PRs where the first answer was unusable or under the gate, and the stricter retry worked. Each one costs an extra call. Rising retries usually come before rising fallbacks.",
+   "datasource": {
+    "type": "postgres",
+    "uid": "pg"
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 3,
+    "x": 7,
+    "y": 1
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "postgres",
+      "uid": "pg"
+     },
+     "rawQuery": true,
+     "editorMode": "code",
+     "rawSql": "SELECT 100.0 * count(*) FILTER (WHERE label_source = 'model_retry')\n       / NULLIF(count(*) FILTER (WHERE label_source <> 'skipped'), 0) AS value\nFROM pr_triage\nWHERE $__timeFilter(triaged_at) AND ('__all' IN ($model) OR model IN ($model))",
+     "format": "table"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 15
+       },
+       {
+        "color": "red",
+        "value": 30
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     },
+     "decimals": 1
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "center",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 5,
+   "type": "stat",
+   "title": "p95 time per PR",
+   "description": "Whole triage loop for one PR (all its model calls), p95. This is the number that sizes the worker pool: workers needed ≈ PRs per second × this. Skipped rows excluded.",
+   "datasource": {
+    "type": "postgres",
+    "uid": "pg"
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 10,
+    "y": 1
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "postgres",
+      "uid": "pg"
+     },
+     "rawQuery": true,
+     "editorMode": "code",
+     "rawSql": "SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) AS value\nFROM pr_triage\nWHERE $__timeFilter(triaged_at) AND ('__all' IN ($model) OR model IN ($model)) AND llm_calls > 0",
+     "format": "table"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ms",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 120000
+       },
+       {
+        "color": "red",
+        "value": 300000
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     },
+     "decimals": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "center",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 6,
+   "type": "stat",
+   "title": "Since last row",
+   "description": "Time since the worker last wrote a row. Ignores the time range and model picker. High on its own can just mean GitHub was quiet. High while lag is above zero means the worker is stuck.",
+   "datasource": {
+    "type": "postgres",
+    "uid": "pg"
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 3,
+    "x": 14,
+    "y": 1
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "postgres",
+      "uid": "pg"
+     },
+     "rawQuery": true,
+     "editorMode": "code",
+     "rawSql": "SELECT extract(epoch FROM now() - max(triaged_at)) AS value\nFROM pr_triage",
+     "format": "table"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 1800
+       },
+       {
+        "color": "red",
+        "value": 3600
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     },
+     "decimals": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "center",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 7,
+   "type": "stat",
+   "title": "Worker lag",
+   "description": "Messages on pr.enriched the worker has not committed. Same expression as the TriageWorkerLagging alert, which fires above 20 for 5 minutes. Derived from the raw gauges because consumer_group_lag_sum reads 0 when the worker is dead.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 17,
+    "y": 1
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "editorMode": "code",
+     "expr": "max(redpanda_kafka_max_offset{redpanda_topic=\"pr.enriched\"})\n  - (max(redpanda_kafka_consumer_group_committed_offset{redpanda_group=\"pr-triage-worker\",redpanda_topic=\"pr.enriched\"}) or vector(0))",
+     "legendFormat": "lag",
+     "range": false,
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "red",
+        "value": 20
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     },
+     "decimals": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "center",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 8,
+   "type": "stat",
+   "title": "DLQ, last 15m",
+   "description": "Records added to pr.dlq in the last 15 minutes. Same expression as the TriageDLQGrowing alert. Inspect with: task consume -- pr.dlq",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 3,
+    "x": 21,
+    "y": 1
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "editorMode": "code",
+     "expr": "sum(increase(redpanda_kafka_max_offset{redpanda_topic=\"pr.dlq\"}[15m]))",
+     "legendFormat": "dlq",
+     "range": false,
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "red",
+        "value": 1
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     },
+     "decimals": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "center",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 9,
+   "type": "row",
+   "title": "Pipeline",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 5
+   },
+   "panels": []
+  },
+  {
+   "id": 10,
+   "type": "timeseries",
+   "title": "Worker lag",
+   "description": "Uncommitted messages on pr.enriched. The red line is the alert threshold (20). Lag climbing while the time per PR is flat means the worker is down or waiting for the model, not slow.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 0,
+    "y": 6
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "editorMode": "code",
+     "expr": "max(redpanda_kafka_max_offset{redpanda_topic=\"pr.enriched\"})\n  - (max(redpanda_kafka_consumer_group_committed_offset{redpanda_group=\"pr-triage-worker\",redpanda_topic=\"pr.enriched\"}) or vector(0))",
+     "legendFormat": "lag",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 0,
+      "showPoints": "auto",
+      "pointSize": 5,
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      },
+      "thresholdsStyle": {
+       "mode": "line"
+      },
+      "barAlignment": -1
+     },
+     "unit": "short",
+     "color": {
+      "mode": "palette-classic"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "red",
+        "value": 20
+       }
+      ]
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   }
+  },
+  {
+   "id": 11,
+   "type": "timeseries",
+   "title": "New DLQ records, 15m window",
+   "description": "Records added to pr.dlq over a sliding 15 minutes. Anything above zero fires TriageDLQGrowing. Nothing consumes pr.dlq, so its total depth only ever grows; this shows new failures, not old ones.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 8,
+    "y": 6
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "editorMode": "code",
+     "expr": "sum(increase(redpanda_kafka_max_offset{redpanda_topic=\"pr.dlq\"}[15m]))",
+     "legendFormat": "new records",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 0,
+      "showPoints": "auto",
+      "pointSize": 5,
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      },
+      "thresholdsStyle": {
+       "mode": "line"
+      },
+      "barAlignment": -1
+     },
+     "unit": "short",
+     "color": {
+      "mode": "palette-classic"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "red",
+        "value": 1
+       }
+      ]
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   }
+  },
+  {
+   "id": 12,
+   "type": "timeseries",
+   "title": "Fallback share, per 3h",
+   "description": "Same as the stat above, in 3h buckets. Lines at 5% and 15%. Buckets with fewer than 5 model-asked PRs are left out, since one fallback out of two rows reads as 50%. The upsert resets triaged_at when a PR is reprocessed, so a row only counts in the bucket of its last write. A fallback that a later run fixed is gone from history.",
+   "datasource": {
+    "type": "postgres",
+    "uid": "pg"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 16,
+    "y": 6
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "postgres",
+      "uid": "pg"
+     },
+     "rawQuery": true,
+     "editorMode": "code",
+     "rawSql": "SELECT\n  $__timeGroupAlias(triaged_at, '3h'),\n  100.0 * count(*) FILTER (WHERE label_source = 'fallback')\n    / count(*) AS \"fallback %\"\nFROM pr_triage\nWHERE $__timeFilter(triaged_at) AND ('__all' IN ($model) OR model IN ($model)) AND label_source <> 'skipped'\nGROUP BY 1\nHAVING count(*) >= 5\nORDER BY 1",
+     "format": "time_series"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 0,
+      "showPoints": "always",
+      "pointSize": 5,
+      "spanNulls": true,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      },
+      "thresholdsStyle": {
+       "mode": "dashed"
+      },
+      "barAlignment": -1
+     },
+     "unit": "percent",
+     "color": {
+      "mode": "palette-classic"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 5
+       },
+       {
+        "color": "red",
+        "value": 15
+       }
+      ]
+     },
+     "min": 0
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "fallback %"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "red"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   }
+  },
+  {
+   "id": 13,
+   "type": "row",
+   "title": "Model",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 14
+   },
+   "panels": []
+  },
+  {
+   "id": 14,
+   "type": "timeseries",
+   "title": "How each PR got its label, share per hour",
+   "description": "Each bar is 100% of the rows written that hour. Red is fallback (gave up, wrote unclear), amber is model_retry (needed the stricter second prompt), green is model, grey is skipped (never asked). The last bar is a partial hour. The upsert resets triaged_at when a PR is reprocessed, so a row only counts in the bucket of its last write. A fallback that a later run fixed is gone from history.",
+   "datasource": {
+    "type": "postgres",
+    "uid": "pg"
+   },
+   "gridPos": {
+    "h": 9,
+    "w": 12,
+    "x": 0,
+    "y": 15
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "postgres",
+      "uid": "pg"
+     },
+     "rawQuery": true,
+     "editorMode": "code",
+     "rawSql": "SELECT\n  $__timeGroupAlias(triaged_at, '1h'),\n  label_source AS metric,\n  count(*) AS value\nFROM pr_triage\nWHERE $__timeFilter(triaged_at) AND ('__all' IN ($model) OR model IN ($model))\nGROUP BY 1, 2\nORDER BY 1",
      "format": "time_series"
     }
    ],
@@ -43,17 +857,334 @@
     "defaults": {
      "custom": {
       "drawStyle": "bars",
-      "fillOpacity": 60,
       "lineWidth": 1,
+      "fillOpacity": 70,
+      "showPoints": "auto",
+      "pointSize": 5,
+      "spanNulls": false,
       "stacking": {
-       "mode": "normal"
-      }
+       "mode": "percent",
+       "group": "A"
+      },
+      "thresholdsStyle": {
+       "mode": "off"
+      },
+      "barAlignment": -1
      },
-     "unit": "short"
+     "unit": "percentunit",
+     "color": {
+      "mode": "palette-classic"
+     }
     },
-    "overrides": []
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "model"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "green"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "model_retry"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "orange"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "fallback"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "red"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "skipped"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "text"
+        }
+       }
+      ]
+     }
+    ]
    },
    "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   }
+  },
+  {
+   "id": 15,
+   "type": "timeseries",
+   "title": "Time per PR, by label_source (p95, 3h buckets)",
+   "description": "Whole triage loop per PR, not per call: per-call averages mix the classify, retry and details calls and hide the cost of a retry. Retries should cost about 1.5x a clean answer. Fallback rows are usually timeouts, so they sit at the top. The dashed line is p50 across all model-asked PRs. Skipped rows excluded. The upsert resets triaged_at when a PR is reprocessed, so a row only counts in the bucket of its last write. A fallback that a later run fixed is gone from history.",
+   "datasource": {
+    "type": "postgres",
+    "uid": "pg"
+   },
+   "gridPos": {
+    "h": 9,
+    "w": 12,
+    "x": 12,
+    "y": 15
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "postgres",
+      "uid": "pg"
+     },
+     "rawQuery": true,
+     "editorMode": "code",
+     "rawSql": "SELECT\n  $__timeGroupAlias(triaged_at, '3h'),\n  label_source || ' p95' AS metric,\n  percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) AS value\nFROM pr_triage\nWHERE $__timeFilter(triaged_at) AND ('__all' IN ($model) OR model IN ($model)) AND llm_calls > 0\nGROUP BY 1, 2\nUNION ALL\nSELECT\n  $__timeGroupAlias(triaged_at, '3h'),\n  'all p50' AS metric,\n  percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms) AS value\nFROM pr_triage\nWHERE $__timeFilter(triaged_at) AND ('__all' IN ($model) OR model IN ($model)) AND llm_calls > 0\nGROUP BY 1, 2\nORDER BY 1",
+     "format": "time_series"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 0,
+      "showPoints": "always",
+      "pointSize": 5,
+      "spanNulls": true,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      },
+      "thresholdsStyle": {
+       "mode": "off"
+      },
+      "barAlignment": -1
+     },
+     "unit": "ms",
+     "color": {
+      "mode": "palette-classic"
+     },
+     "min": 0
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "model p95"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "green"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "model_retry p95"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "orange"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "fallback p95"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "red"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "all p50"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "blue"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "all p50"
+      },
+      "properties": [
+       {
+        "id": "custom.lineStyle",
+        "value": {
+         "fill": "dash",
+         "dash": [
+          10,
+          10
+         ]
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   }
+  },
+  {
+   "id": 16,
+   "type": "row",
+   "title": "Answers",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 24
+   },
+   "panels": []
+  },
+  {
+   "id": 17,
+   "type": "barchart",
+   "title": "Confidence of kept answers",
+   "description": "Scores the model gave for answers we kept, in 0.05 buckets. Nothing kept can be under the gate (0.65, CONFIDENCE_THRESHOLD), so watch how much sits just above it: if the pile moves toward the gate, retries and fallbacks are about to rise. Retried answers are the score of the second attempt.",
+   "datasource": {
+    "type": "postgres",
+    "uid": "pg"
+   },
+   "gridPos": {
+    "h": 9,
+    "w": 6,
+    "x": 0,
+    "y": 25
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "postgres",
+      "uid": "pg"
+     },
+     "rawQuery": true,
+     "editorMode": "code",
+     "rawSql": "WITH b AS (SELECT generate_series(12, 19) AS i)\nSELECT\n  CASE WHEN b.i = 13 THEN '0.65 gate' ELSE to_char(b.i / 20.0, 'FM0.00') END AS bucket,\n  count(t.pr_url) FILTER (WHERE t.label_source = 'model') AS model,\n  count(t.pr_url) FILTER (WHERE t.label_source = 'model_retry') AS model_retry\nFROM b\nLEFT JOIN pr_triage t\n  ON LEAST(floor(t.confidence * 20 + 1e-6), 19) = b.i\n  AND t.label_source IN ('model', 'model_retry')\n  AND $__timeFilter(t.triaged_at) AND ('__all' IN ($model) OR t.model IN ($model))\nGROUP BY b.i\nORDER BY b.i",
+     "format": "table"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "color": {
+      "mode": "palette-classic"
+     },
+     "custom": {
+      "fillOpacity": 70,
+      "lineWidth": 1
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "model"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "green"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "model_retry"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "orange"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "xField": "bucket",
+    "stacking": "normal",
+    "orientation": "vertical",
+    "showValue": "never",
+    "xTickLabelRotation": -45,
     "legend": {
      "displayMode": "list",
      "placement": "bottom"
@@ -64,19 +1195,19 @@
    }
   },
   {
-   "id": 2,
+   "id": 18,
    "type": "timeseries",
-   "title": "Model latency per call, p50 and p95 (ms)",
-   "description": "latency_ms covers the whole loop, so it is divided by llm_calls to get per-call. Excludes skipped rows.",
+   "title": "Category mix, share per 3h",
+   "description": "What the model is calling things. A sudden shift (for example everything turning into refactor after a model change) is drift. unclear only comes from fallback and skipped rows, never from the model. The upsert resets triaged_at when a PR is reprocessed, so a row only counts in the bucket of its last write. A fallback that a later run fixed is gone from history.",
    "datasource": {
     "type": "postgres",
     "uid": "pg"
    },
    "gridPos": {
-    "h": 10,
-    "w": 24,
-    "x": 0,
-    "y": 10
+    "h": 9,
+    "w": 6,
+    "x": 6,
+    "y": 25
    },
    "targets": [
     {
@@ -86,23 +1217,126 @@
       "uid": "pg"
      },
      "rawQuery": true,
-     "rawSql": "SELECT\n  date_trunc('hour', triaged_at) AS time,\n  percentile_cont(0.5)  WITHIN GROUP (ORDER BY latency_ms::float / GREATEST(llm_calls, 1)) AS p50_ms,\n  percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms::float / GREATEST(llm_calls, 1)) AS p95_ms\nFROM pr_triage\nWHERE $__timeFilter(triaged_at) AND llm_calls > 0\nGROUP BY 1\nORDER BY 1",
+     "editorMode": "code",
+     "rawSql": "SELECT\n  $__timeGroupAlias(triaged_at, '3h'),\n  category AS metric,\n  count(*) AS value\nFROM pr_triage\nWHERE $__timeFilter(triaged_at) AND ('__all' IN ($model) OR model IN ($model))\nGROUP BY 1, 2\nORDER BY 1",
      "format": "time_series"
     }
    ],
    "fieldConfig": {
     "defaults": {
      "custom": {
-      "drawStyle": "line",
-      "fillOpacity": 10,
+      "drawStyle": "bars",
       "lineWidth": 1,
+      "fillOpacity": 70,
+      "showPoints": "auto",
+      "pointSize": 5,
+      "spanNulls": false,
       "stacking": {
-       "mode": "none"
-      }
+       "mode": "percent",
+       "group": "A"
+      },
+      "thresholdsStyle": {
+       "mode": "off"
+      },
+      "barAlignment": -1
      },
-     "unit": "ms"
+     "unit": "percentunit",
+     "color": {
+      "mode": "palette-classic"
+     }
     },
-    "overrides": []
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "security"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "red"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "feature"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "blue"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "refactor"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "purple"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "docs"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "green"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "dependency-bump"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "yellow"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "unclear"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "text"
+        }
+       }
+      ]
+     }
+    ]
    },
    "options": {
     "legend": {
@@ -110,7 +1344,401 @@
      "placement": "bottom"
     },
     "tooltip": {
-     "mode": "multi"
+     "mode": "multi",
+     "sort": "desc"
+    }
+   }
+  },
+  {
+   "id": 19,
+   "type": "timeseries",
+   "title": "PR opened to triaged (p50, p95)",
+   "description": "triaged_at minus event_created_at: polling delay, queue time and model time together. This is the delay a person waiting for a label sees. Log scale: GitHub also hands over PRs opened days ago, so p95 is in days while p50 is minutes. A PR that was reprocessed counts from its last write.",
+   "datasource": {
+    "type": "postgres",
+    "uid": "pg"
+   },
+   "gridPos": {
+    "h": 9,
+    "w": 6,
+    "x": 12,
+    "y": 25
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "postgres",
+      "uid": "pg"
+     },
+     "rawQuery": true,
+     "editorMode": "code",
+     "rawSql": "SELECT\n  $__timeGroupAlias(triaged_at, '1h'),\n  percentile_cont(0.5)  WITHIN GROUP (ORDER BY extract(epoch FROM triaged_at - event_created_at)) AS p50,\n  percentile_cont(0.95) WITHIN GROUP (ORDER BY extract(epoch FROM triaged_at - event_created_at)) AS p95\nFROM pr_triage\nWHERE $__timeFilter(triaged_at) AND ('__all' IN ($model) OR model IN ($model)) AND event_created_at IS NOT NULL\nGROUP BY 1\nORDER BY 1",
+     "format": "time_series"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 0,
+      "showPoints": "always",
+      "pointSize": 5,
+      "spanNulls": true,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      },
+      "thresholdsStyle": {
+       "mode": "off"
+      },
+      "barAlignment": -1,
+      "scaleDistribution": {
+       "type": "log",
+       "log": 10
+      }
+     },
+     "unit": "s",
+     "color": {
+      "mode": "palette-classic"
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "p50"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "blue"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "p95"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "purple"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   }
+  },
+  {
+   "id": 20,
+   "type": "timeseries",
+   "title": "Details call came back empty, % per 3h",
+   "description": "Share of kept answers (model, model_retry) with neither affected_area nor risk_note. The second call is best-effort and fails silently by design, so this is the only place that shows it. The label is still fine; only the note is missing. Buckets with fewer than 5 kept answers are left out.",
+   "datasource": {
+    "type": "postgres",
+    "uid": "pg"
+   },
+   "gridPos": {
+    "h": 9,
+    "w": 6,
+    "x": 18,
+    "y": 25
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "postgres",
+      "uid": "pg"
+     },
+     "rawQuery": true,
+     "editorMode": "code",
+     "rawSql": "SELECT\n  $__timeGroupAlias(triaged_at, '3h'),\n  100.0 * count(*) FILTER (WHERE affected_area IS NULL AND risk_note IS NULL) / count(*) AS \"empty %\"\nFROM pr_triage\nWHERE $__timeFilter(triaged_at) AND ('__all' IN ($model) OR model IN ($model)) AND label_source IN ('model', 'model_retry')\nGROUP BY 1\nHAVING count(*) >= 5\nORDER BY 1",
+     "format": "time_series"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 0,
+      "showPoints": "always",
+      "pointSize": 5,
+      "spanNulls": true,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      },
+      "thresholdsStyle": {
+       "mode": "off"
+      },
+      "barAlignment": -1
+     },
+     "unit": "percent",
+     "color": {
+      "mode": "palette-classic"
+     },
+     "min": 0
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "empty %"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "orange"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   }
+  },
+  {
+   "id": 21,
+   "type": "row",
+   "title": "Fallbacks",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 34
+   },
+   "panels": []
+  },
+  {
+   "id": 22,
+   "type": "bargauge",
+   "title": "Why it fell back",
+   "description": "Fallback rows grouped by what went wrong on the first attempt. model unreachable is the model host (timeouts, 500s), not the prompt. unreadable answer and unsure point at the prompt or the model.",
+   "datasource": {
+    "type": "postgres",
+    "uid": "pg"
+   },
+   "gridPos": {
+    "h": 10,
+    "w": 6,
+    "x": 0,
+    "y": 35
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "postgres",
+      "uid": "pg"
+     },
+     "rawQuery": true,
+     "editorMode": "code",
+     "rawSql": "SELECT\n  CASE\n    WHEN rationale LIKE 'Could not classify: model unreachable%' THEN 'model unreachable'\n    WHEN rationale LIKE 'Could not classify: unreadable answer%' THEN 'unreadable answer'\n    WHEN rationale LIKE 'Could not classify: low confidence%' THEN 'unsure, then retry failed'\n    WHEN rationale LIKE 'Could not classify: model unsure twice%' THEN 'unsure twice'\n    ELSE 'other'\n  END AS reason,\n  count(*) AS value\nFROM pr_triage\nWHERE $__timeFilter(triaged_at) AND ('__all' IN ($model) OR model IN ($model)) AND label_source = 'fallback'\nGROUP BY 1\nORDER BY 2 DESC",
+     "format": "table"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "min": 0,
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "red"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [],
+     "fields": "",
+     "values": true
+    },
+    "orientation": "horizontal",
+    "displayMode": "basic",
+    "showUnfilled": true,
+    "valueMode": "color",
+    "namePlacement": "top",
+    "text": {
+     "titleSize": 13,
+     "valueSize": 16
+    }
+   }
+  },
+  {
+   "id": 23,
+   "type": "table",
+   "title": "Latest fallbacks",
+   "description": "The 50 newest fallback rows. Click a PR to open it on GitHub. Reason is the rationale the worker wrote, which carries the exception from both attempts.",
+   "datasource": {
+    "type": "postgres",
+    "uid": "pg"
+   },
+   "gridPos": {
+    "h": 10,
+    "w": 18,
+    "x": 6,
+    "y": 35
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "postgres",
+      "uid": "pg"
+     },
+     "rawQuery": true,
+     "editorMode": "code",
+     "rawSql": "SELECT\n  triaged_at AS \"Time\",\n  repo || '#' || pr_number AS \"PR\",\n  title AS \"Title\",\n  CASE\n    WHEN rationale LIKE 'Could not classify: model unreachable%' THEN 'model unreachable'\n    WHEN rationale LIKE 'Could not classify: unreadable answer%' THEN 'unreadable answer'\n    WHEN rationale LIKE 'Could not classify: low confidence%' THEN 'unsure, then retry failed'\n    WHEN rationale LIKE 'Could not classify: model unsure twice%' THEN 'unsure twice'\n    ELSE 'other'\n  END AS \"Kind\",\n  regexp_replace(rationale, '^Could not classify: ', '') AS \"Reason\",\n  llm_calls AS \"Calls\",\n  latency_ms AS \"Time taken\",\n  replace(replace(pr_url, 'api.github.com/repos', 'github.com'), '/pulls/', '/pull/') AS url\nFROM pr_triage\nWHERE $__timeFilter(triaged_at) AND ('__all' IN ($model) OR model IN ($model)) AND label_source = 'fallback'\nORDER BY triaged_at DESC\nLIMIT 50",
+     "format": "table"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "align": "auto",
+      "cellOptions": {
+       "type": "auto"
+      },
+      "filterable": true
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "url"
+      },
+      "properties": [
+       {
+        "id": "custom.hidden",
+        "value": true
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "PR"
+      },
+      "properties": [
+       {
+        "id": "links",
+        "value": [
+         {
+          "title": "Open on GitHub",
+          "url": "${__data.fields.url}",
+          "targetBlank": true
+         }
+        ]
+       },
+       {
+        "id": "custom.width",
+        "value": 220
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Time"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 170
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Kind"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 190
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Calls"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 60
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Time taken"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "ms"
+       },
+       {
+        "id": "custom.width",
+        "value": 100
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false
     }
    }
   }
