@@ -8,19 +8,7 @@ All work is on `sdd/factory`, cut from `origin/main`. Request branches are `sdd/
 
 Each phase writes one file. That file is the only input to the next phase. The checks are code.
 
-```mermaid
-flowchart LR
-  spec[01_spec]
-  v1[validate_request]
-  plan[02_plan]
-  v2[validate_request]
-  change[03_change]
-  v3[validate_request]
-  gateNode[gate.py]
-  review[05_review]
-  pr[06_pr]
-  spec --> v1 --> plan --> v2 --> change --> v3 --> gateNode --> review --> pr
-```
+<a href="{{ '/assets/diagrams/sdd-phases.svg' | relative_url }}"><img src="{{ '/assets/diagrams/sdd-phases.svg' | relative_url }}" alt="Factory phases: spec, plan, change, review, pr, with validate_request and gate.py checks between them" width="100%"></a>
 
 `scripts/validate_request.py` checks the folder, the seam, and the diff. `scripts/gate.py` runs pytest and `evals/run.py --gate`, then writes `04-validation/gate.json` and `report.md`. CI on pull requests into `sdd/factory` runs both again.
 

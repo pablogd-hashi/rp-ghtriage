@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 330" width="1000" height="330" role="img" aria-labelledby="t d">
+<title id="t">Spec-driven factory phases</title>
+<desc id="d">The agent writes 01 spec, 02 plan, 03 change, 05 review and 06 pr. After spec, plan and change, validate_request.py checks the folder, the seam and the diff. After the change, gate.py runs pytest and the eval gate. The pull request targets sdd/factory and a person merges.</desc>
+<style>
+  .nt { font: 600 16px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; fill: #1b2130; }
+  .ns { font: 400 12.5px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; fill: #4a5162; }
+  .ann { font: 400 12px 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace; fill: #4a5162; }
+  .grp { font: 500 10.5px 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace; fill: #8b8f99; letter-spacing: .12em; }
+  .foot { font: 400 12px 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace; fill: #4a5162; }
+  .hot .nt, .hot .ns, .ann.hot { fill: #b6422a; }
+  .muted .nt { fill: #4a5162; }
+  .wire { stroke: #1b2130; stroke-width: 1.5; fill: none; }
+  .wire.hot { stroke: #b6422a; }
+  .dot { stroke: #8b8f99; stroke-width: 1.2; stroke-dasharray: 2 4; stroke-linecap: round; fill: none; }
+  .rule { stroke: #cfc6b3; stroke-width: 1; }
+</style>
+<defs>
+  <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#1b2130" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/></marker>
+  <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#b6422a" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/></marker>
+</defs>
+<rect width="1000" height="330" rx="10" fill="#f2ede2"/>
+<path class="rule" d="M24 42 L24 37 L976 37 L976 42" fill="none"/>
+<rect x="188.39999999999998" y="28" width="623.2" height="16" fill="#f2ede2"/>
+<text class="grp" x="500.0" y="41" text-anchor="middle">EACH PHASE WRITES ONE FILE · THAT FILE IS THE NEXT PHASE&#x27;S ONLY INPUT</text>
+<g class="hot">
+  <rect x="24" y="70" width="128" height="64" rx="6" fill="#f6e7df" stroke="#b6422a" stroke-width="2"/>
+  <text class="nt" x="88.0" y="99.0" text-anchor="middle">01 spec</text>
+  <text class="ns" x="88.0" y="118.0" text-anchor="middle">what and why</text>
+</g>
+<g class="hot">
+  <rect x="220" y="70" width="128" height="64" rx="6" fill="#f6e7df" stroke="#b6422a" stroke-width="2"/>
+  <text class="nt" x="284.0" y="99.0" text-anchor="middle">02 plan</text>
+  <text class="ns" x="284.0" y="118.0" text-anchor="middle">seam + files</text>
+</g>
+<g class="hot">
+  <rect x="416" y="70" width="128" height="64" rx="6" fill="#f6e7df" stroke="#b6422a" stroke-width="2"/>
+  <text class="nt" x="480.0" y="99.0" text-anchor="middle">03 change</text>
+  <text class="ns" x="480.0" y="118.0" text-anchor="middle">the diff</text>
+</g>
+<g class="hot">
+  <rect x="640" y="70" width="128" height="64" rx="6" fill="#f6e7df" stroke="#b6422a" stroke-width="2"/>
+  <text class="nt" x="704.0" y="99.0" text-anchor="middle">05 review</text>
+  <text class="ns" x="704.0" y="118.0" text-anchor="middle">reads 01–04</text>
+</g>
+<g class="hot">
+  <rect x="848" y="70" width="128" height="64" rx="6" fill="#f6e7df" stroke="#b6422a" stroke-width="2"/>
+  <text class="nt" x="912.0" y="99.0" text-anchor="middle">06 pr</text>
+  <text class="ns" x="912.0" y="118.0" text-anchor="middle">base sdd/factory</text>
+</g>
+<path class="wire" d="M152 102.0 L218 102.0" marker-end="url(#a)"/>
+<path class="wire" d="M348 102.0 L414 102.0" marker-end="url(#a)"/>
+<path class="wire" d="M544 102.0 L638 102.0" marker-end="url(#a)"/>
+<path class="wire" d="M768 102.0 L846 102.0" marker-end="url(#a)"/>
+<path class="dot" d="M186.0 106.0 L186.0 176"/>
+<circle cx="186.0" cy="102.0" r="4" fill="#f2ede2" stroke="#1b2130" stroke-width="1.5"/>
+<rect x="113.0" y="176" width="146" height="32" rx="16" fill="#f7f3ea" stroke="#1b2130" stroke-width="1.5"/>
+<text class="ann" x="186.0" y="197" text-anchor="middle">validate_request</text>
+<path class="dot" d="M382.0 106.0 L382.0 176"/>
+<circle cx="382.0" cy="102.0" r="4" fill="#f2ede2" stroke="#1b2130" stroke-width="1.5"/>
+<rect x="309.0" y="176" width="146" height="32" rx="16" fill="#f7f3ea" stroke="#1b2130" stroke-width="1.5"/>
+<text class="ann" x="382.0" y="197" text-anchor="middle">validate_request</text>
+<path class="dot" d="M592.0 106.0 L592.0 176"/>
+<circle cx="592.0" cy="102.0" r="4" fill="#f2ede2" stroke="#1b2130" stroke-width="1.5"/>
+<rect x="514.0" y="176" width="156" height="50" rx="16" fill="#f7f3ea" stroke="#1b2130" stroke-width="1.5"/>
+<text class="ann" x="592.0" y="197" text-anchor="middle">validate_request</text>
+<text class="ann" x="592.0" y="215" text-anchor="middle">gate.py</text>
+<text class="ann" x="626" y="248" text-anchor="middle">pytest + eval gate</text>
+<path class="dot" d="M912.0 138 L912.0 176"/>
+<text class="ann" x="912.0" y="197" text-anchor="middle">a person merges</text>
+<line class="rule" x1="24" y1="274" x2="976" y2="274"/>
+<rect x="24" y="294" width="14" height="14" rx="3" fill="#f6e7df" stroke="#b6422a" stroke-width="1.5"/>
+<text class="foot" x="46" y="306" text-anchor="start">written by the agent</text>
+<rect x="230" y="294" width="14" height="14" rx="7" fill="#f7f3ea" stroke="#1b2130" stroke-width="1.5"/>
+<text class="foot" x="252" y="306" text-anchor="start">checked by code</text>
+<text class="foot" x="976" y="306" text-anchor="end">nothing merges · nothing goes to main</text>
+</svg>

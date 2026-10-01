@@ -16,23 +16,7 @@ straight to the file on GitHub.
 
 ## The picture
 
-```mermaid
-flowchart TB
-    gh[GitHub public feed<br/>every event on GitHub, worldwide]
-    connect[Redpanda Connect<br/>fetches, filters, and fetches again]
-    queue[(Redpanda<br/>the queue)]
-    worker[The worker<br/>asks the model, decides, writes]
-    model[Ollama<br/>the AI model]
-    db[(Postgres<br/>one row per pull request)]
-    web[Web page<br/>localhost:8000]
-
-    gh -->|once a minute| connect
-    connect -->|only the pull requests, with their code| queue
-    queue --> worker
-    worker <-->|two or three questions| model
-    worker --> db
-    db --> web
-```
+<a href="{{ '/assets/diagrams/system.svg' | relative_url }}"><img src="{{ '/assets/diagrams/system.svg' | relative_url }}" alt="PR Triage architecture: GitHub, Redpanda Connect, Redpanda, the worker and model, Postgres and the web page" width="100%"></a>
 
 GitHub publishes everything that happens, Connect throws most of it away and fetches the
 code for whatever is left, and the queue holds those results until the worker is ready.
@@ -213,20 +197,7 @@ Every row records which of those paths it took:
 | `fallback` | Both attempts failed. Wrote "unclear" rather than guessing |
 | `skipped` | Never asked the model. Draft, or nothing to read |
 
-```mermaid
-flowchart TB
-    in([pull request]) --> skip{worth asking?}
-    skip -->|no: draft, no files| skipped[write: unclear, skipped]
-    skip -->|yes| q1[question 1: what kind of change?]
-    q1 --> clean[clean up the answer]
-    clean --> gate{readable, and<br/>confidence >= 0.65?}
-    gate -->|yes| q2[question 2: what could break?]
-    gate -->|no| retry[ask question 1 again, stricter]
-    retry --> gate2{readable, and<br/>confidence >= 0.65?}
-    gate2 -->|yes| q2
-    gate2 -->|no| fb[write: unclear, fallback]
-    q2 --> done[write: category, note, model or model_retry]
-```
+<a href="{{ '/assets/diagrams/triage-flow.svg' | relative_url }}"><img src="{{ '/assets/diagrams/triage-flow.svg' | relative_url }}" alt="Triage steps for one pull request: guard, call 1, parse, gate, then call 2 or a stricter retry, ending in a row" width="100%"></a>
 
 **The decision: a multi-step loop rather than one comprehensive prompt.** A first call
 classifies and scores confidence, a gate decides whether to trust it, a stricter retry

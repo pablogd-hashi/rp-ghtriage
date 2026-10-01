@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 384" width="1000" height="384" role="img" aria-labelledby="t d">
+<title id="t">PR Triage architecture</title>
+<desc id="d">GitHub public events go to Redpanda Connect, which filters, dedupes and fetches the code, then writes to the Redpanda topic pr.enriched, or to pr.dlq when nothing was fetched. The worker reads the topic, calls the local Ollama model two or three times, writes one Postgres row per pull request, and publishes pr.triaged. A web page reads Postgres. Prometheus alerts on lag and the DLQ.</desc>
+<style>
+  .nt { font: 600 16px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; fill: #1b2130; }
+  .ns { font: 400 12.5px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; fill: #4a5162; }
+  .ann { font: 400 12px 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace; fill: #4a5162; }
+  .grp { font: 500 10.5px 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace; fill: #8b8f99; letter-spacing: .12em; }
+  .foot { font: 400 12px 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace; fill: #4a5162; }
+  .hot .nt, .hot .ns, .ann.hot { fill: #b6422a; }
+  .muted .nt { fill: #4a5162; }
+  .wire { stroke: #1b2130; stroke-width: 1.5; fill: none; }
+  .wire.hot { stroke: #b6422a; }
+  .dot { stroke: #8b8f99; stroke-width: 1.2; stroke-dasharray: 2 4; stroke-linecap: round; fill: none; }
+  .rule { stroke: #cfc6b3; stroke-width: 1; }
+</style>
+<defs>
+  <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#1b2130" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/></marker>
+  <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#b6422a" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/></marker>
+</defs>
+<rect width="1000" height="384" rx="10" fill="#f2ede2"/>
+<path class="rule" d="M23 42 L23 37 L157 37 L157 42" fill="none"/>
+<rect x="55.599999999999994" y="28" width="68.80000000000001" height="16" fill="#f2ede2"/>
+<text class="grp" x="90.0" y="41" text-anchor="middle">GITHUB</text>
+<path class="rule" d="M187 42 L187 37 L321 37 L321 42" fill="none"/>
+<rect x="175.6" y="28" width="156.8" height="16" fill="#f2ede2"/>
+<text class="grp" x="254.0" y="41" text-anchor="middle">REDPANDA CONNECT</text>
+<path class="rule" d="M351 42 L351 37 L485 37 L485 42" fill="none"/>
+<rect x="374.8" y="28" width="86.4" height="16" fill="#f2ede2"/>
+<text class="grp" x="418.0" y="41" text-anchor="middle">REDPANDA</text>
+<path class="rule" d="M515 42 L515 37 L649 37 L649 42" fill="none"/>
+<rect x="512.4" y="28" width="139.20000000000002" height="16" fill="#f2ede2"/>
+<text class="grp" x="582.0" y="41" text-anchor="middle">WORKER + MODEL</text>
+<path class="rule" d="M679 42 L679 37 L977 37 L977 42" fill="none"/>
+<rect x="758.4" y="28" width="139.20000000000002" height="16" fill="#f2ede2"/>
+<text class="grp" x="828.0" y="41" text-anchor="middle">POSTGRES + WEB</text>
+<g class="fill">
+  <rect x="23" y="74" width="134" height="68" rx="6" fill="#e4dfd4" stroke="#1b2130" stroke-width="1.5"/>
+  <text class="nt" x="90.0" y="105.0" text-anchor="middle">GitHub</text>
+  <text class="ns" x="90.0" y="124.0" text-anchor="middle">public /events</text>
+</g>
+<g class="">
+  <rect x="187" y="74" width="134" height="68" rx="6" fill="#f7f3ea" stroke="#1b2130" stroke-width="1.5"/>
+  <text class="nt" x="254.0" y="105.0" text-anchor="middle">Connect</text>
+  <text class="ns" x="254.0" y="124.0" text-anchor="middle">filter · dedupe · fetch</text>
+</g>
+<g class="">
+  <rect x="351" y="74" width="134" height="68" rx="6" fill="#f7f3ea" stroke="#1b2130" stroke-width="1.5"/>
+  <text class="nt" x="418.0" y="105.0" text-anchor="middle">Redpanda</text>
+  <text class="ns" x="418.0" y="124.0" text-anchor="middle">topic pr.enriched</text>
+</g>
+<g class="hot">
+  <rect x="515" y="74" width="134" height="68" rx="6" fill="#f6e7df" stroke="#b6422a" stroke-width="2"/>
+  <text class="nt" x="582.0" y="105.0" text-anchor="middle">Worker</text>
+  <text class="ns" x="582.0" y="124.0" text-anchor="middle">guard · gate · retry</text>
+</g>
+<g class="">
+  <rect x="679" y="74" width="134" height="68" rx="6" fill="#f7f3ea" stroke="#1b2130" stroke-width="1.5"/>
+  <text class="nt" x="746.0" y="105.0" text-anchor="middle">Postgres</text>
+  <text class="ns" x="746.0" y="124.0" text-anchor="middle">one row per PR</text>
+</g>
+<g class="">
+  <rect x="843" y="74" width="134" height="68" rx="6" fill="#f7f3ea" stroke="#1b2130" stroke-width="1.5"/>
+  <text class="nt" x="910.0" y="105.0" text-anchor="middle">Web page</text>
+  <text class="ns" x="910.0" y="124.0" text-anchor="middle">localhost:8000</text>
+</g>
+<path class="wire" d="M157 108.0 L185 108.0" marker-end="url(#a)"/>
+<path class="wire" d="M321 108.0 L349 108.0" marker-end="url(#a)"/>
+<path class="wire" d="M485 108.0 L513 108.0" marker-end="url(#a)"/>
+<path class="wire" d="M649 108.0 L677 108.0" marker-end="url(#a)"/>
+<path class="wire" d="M813 108.0 L841 108.0" marker-end="url(#a)"/>
+<g class="muted">
+  <rect x="187" y="208" width="134" height="68" rx="6" fill="#f7f3ea" stroke="#8b8f99" stroke-width="1.5"/>
+  <text class="nt" x="254.0" y="239.0" text-anchor="middle">pr.dlq</text>
+  <text class="ns" x="254.0" y="258.0" text-anchor="middle">nothing was fetched</text>
+</g>
+<path class="wire" d="M254.0 142 L254.0 206" marker-end="url(#a)"/>
+<text class="ann" x="262.0" y="184" text-anchor="start">no files</text>
+<g class="hot">
+  <rect x="515" y="208" width="134" height="68" rx="6" fill="#f6e7df" stroke="#b6422a" stroke-width="2"/>
+  <text class="nt" x="582.0" y="239.0" text-anchor="middle">Model</text>
+  <text class="ns" x="582.0" y="258.0" text-anchor="middle">Ollama, local</text>
+</g>
+<path class="wire hot" d="M582.0 144 L582.0 206" marker-end="url(#ah)" marker-start="url(#ah)"/>
+<text class="ann hot" x="590.0" y="178" text-anchor="start">2 calls,</text>
+<text class="ann hot" x="590.0" y="194" text-anchor="start">3 on a retry</text>
+<g class="muted">
+  <rect x="679" y="208" width="134" height="68" rx="6" fill="#f7f3ea" stroke="#8b8f99" stroke-width="1.5"/>
+  <text class="nt" x="746.0" y="239.0" text-anchor="middle">pr.triaged</text>
+  <text class="ns" x="746.0" y="258.0" text-anchor="middle">for other consumers</text>
+</g>
+<path class="wire" d="M627 142 L627 166 L746.0 166 L746.0 206" marker-end="url(#a)"/>
+<g class="muted">
+  <rect x="843" y="208" width="134" height="68" rx="6" fill="#f7f3ea" stroke="#8b8f99" stroke-width="1.5"/>
+  <text class="nt" x="910.0" y="239.0" text-anchor="middle">Prometheus</text>
+  <text class="ns" x="910.0" y="258.0" text-anchor="middle">lag and DLQ alerts</text>
+</g>
+<line class="rule" x1="23" y1="310" x2="977" y2="310"/>
+<text class="foot" x="23" y="338" text-anchor="start">220 events sampled → 18 kept: ~92% dropped before any fetch or model call</text>
+<text class="foot" x="23" y="360" text-anchor="start">red = the only part that calls a model</text>
+</svg>

@@ -7,11 +7,6 @@ remote_theme: just-the-docs/just-the-docs
 url: https://pablogd-hashi.github.io
 baseurl: /rp-ghtriage
 
-# just-the-docs renders ```mermaid fences natively once a version is pinned.
-# Without this the diagrams in architecture.md come out as plain code blocks.
-mermaid:
-  version: "10.9.1"
-
 aux_links:
   GitHub repository:
     - https://github.com/pablogd-hashi/rp-ghtriage

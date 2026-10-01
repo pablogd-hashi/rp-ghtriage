@@ -12,23 +12,7 @@ bump), adding a short risk note that a human can act upon. All of it lands on a 
 
 It runs with a single command and it doesn't need any API key.
 
-```mermaid
-flowchart TB
-    gh[GitHub public feed<br/>every event on GitHub, worldwide]
-    connect[Redpanda Connect<br/>fetches, filters, and fetches again]
-    queue[(Redpanda<br/>the queue)]
-    worker[The worker<br/>asks the model, decides, writes]
-    model[Ollama<br/>the AI model]
-    db[(Postgres<br/>one row per pull request)]
-    web[Web page<br/>localhost:8000]
-
-    gh -->|once a minute| connect
-    connect -->|only the pull requests, with their code| queue
-    queue --> worker
-    worker <-->|two or three questions| model
-    worker --> db
-    db --> web
-```
+<a href="{{ '/assets/diagrams/system.svg' | relative_url }}"><img src="{{ '/assets/diagrams/system.svg' | relative_url }}" alt="PR Triage architecture: GitHub, Redpanda Connect, Redpanda, the worker and model, Postgres and the web page" width="100%"></a>
 
 ## The problem it solves
 

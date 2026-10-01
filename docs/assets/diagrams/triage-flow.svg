@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 470" width="1000" height="470" role="img" aria-labelledby="t d">
+<title id="t">Triage steps for one pull request</title>
+<desc id="d">The guard skips drafts and PRs with no files, with zero model calls. Otherwise call 1 classifies and scores. Parse repairs the format and the gate checks the score is at least 0.65. If yes, call 2 writes the risk note and the row is saved as model. If not, a stricter retry runs; if it passes, call 2 runs and the row is model_retry; if it fails, the row is unclear with label_source fallback.</desc>
+<style>
+  .nt { font: 600 16px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; fill: #1b2130; }
+  .ns { font: 400 12.5px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; fill: #4a5162; }
+  .ann { font: 400 12px 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace; fill: #4a5162; }
+  .grp { font: 500 10.5px 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace; fill: #8b8f99; letter-spacing: .12em; }
+  .foot { font: 400 12px 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace; fill: #4a5162; }
+  .hot .nt, .hot .ns, .ann.hot { fill: #b6422a; }
+  .muted .nt { fill: #4a5162; }
+  .wire { stroke: #1b2130; stroke-width: 1.5; fill: none; }
+  .wire.hot { stroke: #b6422a; }
+  .dot { stroke: #8b8f99; stroke-width: 1.2; stroke-dasharray: 2 4; stroke-linecap: round; fill: none; }
+  .rule { stroke: #cfc6b3; stroke-width: 1; }
+</style>
+<defs>
+  <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#1b2130" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/></marker>
+  <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#b6422a" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/></marker>
+</defs>
+<rect width="1000" height="470" rx="10" fill="#f2ede2"/>
+<circle cx="26" cy="102.0" r="7" fill="#1b2130"/>
+<text class="grp" x="26" y="84.0" text-anchor="middle">PR</text>
+<path class="wire" d="M33 102.0 L54 102.0" marker-end="url(#a)"/>
+<g class="">
+  <rect x="56" y="70" width="128" height="64" rx="6" fill="#f7f3ea" stroke="#1b2130" stroke-width="1.5"/>
+  <text class="nt" x="120.0" y="99.0" text-anchor="middle">Guard</text>
+  <text class="ns" x="120.0" y="118.0" text-anchor="middle">should_skip</text>
+</g>
+<path class="wire" d="M184 102.0 L210 102.0" marker-end="url(#a)"/>
+<g class="hot">
+  <rect x="212" y="70" width="132" height="64" rx="6" fill="#f6e7df" stroke="#b6422a" stroke-width="2"/>
+  <text class="nt" x="278.0" y="99.0" text-anchor="middle">Call 1</text>
+  <text class="ns" x="278.0" y="118.0" text-anchor="middle">classify + score</text>
+</g>
+<path class="wire" d="M344 102.0 L370 102.0" marker-end="url(#a)"/>
+<g class="">
+  <rect x="372" y="70" width="96" height="64" rx="6" fill="#f7f3ea" stroke="#1b2130" stroke-width="1.5"/>
+  <text class="nt" x="420.0" y="99.0" text-anchor="middle">Parse</text>
+  <text class="ns" x="420.0" y="118.0" text-anchor="middle">repair format</text>
+</g>
+<path class="wire" d="M468 102.0 L494 102.0" marker-end="url(#a)"/>
+<g class="">
+  <rect x="496" y="70" width="140" height="64" rx="6" fill="#f7f3ea" stroke="#1b2130" stroke-width="1.5"/>
+  <text class="nt" x="566.0" y="99.0" text-anchor="middle">Gate</text>
+  <text class="ns" x="566.0" y="118.0" text-anchor="middle">score ≥ 0.65?</text>
+</g>
+<path class="wire" d="M636 102.0 L678 102.0" marker-end="url(#a)"/>
+<text class="ann" x="658.0" y="92.0" text-anchor="middle">yes</text>
+<g class="hot">
+  <rect x="680" y="70" width="132" height="64" rx="6" fill="#f6e7df" stroke="#b6422a" stroke-width="2"/>
+  <text class="nt" x="746.0" y="99.0" text-anchor="middle">Call 2</text>
+  <text class="ns" x="746.0" y="118.0" text-anchor="middle">risk note</text>
+</g>
+<path class="wire" d="M812 102.0 L838 102.0" marker-end="url(#a)"/>
+<g class="fill">
+  <rect x="840" y="70" width="136" height="64" rx="6" fill="#e4dfd4" stroke="#1b2130" stroke-width="1.5"/>
+  <text class="nt" x="908.0" y="99.0" text-anchor="middle">Row</text>
+  <text class="ns" x="908.0" y="118.0" text-anchor="middle">model · model_retry</text>
+</g>
+<path class="wire" d="M120.0 134 L120.0 194" marker-end="url(#a)"/>
+<text class="ann" x="128.0" y="168" text-anchor="start">draft, no files</text>
+<g class="muted">
+  <rect x="56" y="196" width="128" height="64" rx="6" fill="#f7f3ea" stroke="#8b8f99" stroke-width="1.5"/>
+  <text class="nt" x="120.0" y="225.0" text-anchor="middle">Row</text>
+  <text class="ns" x="120.0" y="244.0" text-anchor="middle">skipped · 0 calls</text>
+</g>
+<path class="wire" d="M566.0 134 L566.0 194" marker-end="url(#a)"/>
+<text class="ann" x="574.0" y="168" text-anchor="start">no / unreadable</text>
+<g class="hot">
+  <rect x="496" y="196" width="140" height="64" rx="6" fill="#f6e7df" stroke="#b6422a" stroke-width="2"/>
+  <text class="nt" x="566.0" y="225.0" text-anchor="middle">Retry</text>
+  <text class="ns" x="566.0" y="244.0" text-anchor="middle">stricter prompt</text>
+</g>
+<path class="wire" d="M566.0 260 L566.0 320" marker-end="url(#a)"/>
+<g class="">
+  <rect x="496" y="322" width="140" height="64" rx="6" fill="#f7f3ea" stroke="#1b2130" stroke-width="1.5"/>
+  <text class="nt" x="566.0" y="351.0" text-anchor="middle">Parse + gate</text>
+  <text class="ns" x="566.0" y="370.0" text-anchor="middle">score ≥ 0.65?</text>
+</g>
+<path class="wire" d="M636 354.0 L746.0 354.0 L746.0 136" marker-end="url(#a)"/>
+<text class="ann" x="648" y="344.0" text-anchor="start">yes</text>
+<path class="wire" d="M496 354.0 L434 354.0" marker-end="url(#a)"/>
+<text class="ann" x="484" y="344.0" text-anchor="end">no</text>
+<g class="muted">
+  <rect x="212" y="322" width="220" height="64" rx="6" fill="#f7f3ea" stroke="#8b8f99" stroke-width="1.5"/>
+  <text class="nt" x="322.0" y="351.0" text-anchor="middle">Row</text>
+  <text class="ns" x="322.0" y="370.0" text-anchor="middle">fallback · unclear · 2 calls</text>
+</g>
+<line class="rule" x1="26" y1="414" x2="974" y2="414"/>
+<rect x="26" y="434" width="14" height="14" rx="3" fill="#f6e7df" stroke="#b6422a" stroke-width="1.5"/>
+<text class="foot" x="48" y="446" text-anchor="start">a model call</text>
+<rect x="170" y="434" width="14" height="14" rx="3" fill="#f7f3ea" stroke="#1b2130" stroke-width="1.5"/>
+<text class="foot" x="192" y="446" text-anchor="start">plain code, no model</text>
+<text class="foot" x="974" y="446" text-anchor="end">every path writes a row</text>
+</svg>
